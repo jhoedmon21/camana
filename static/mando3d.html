@@ -1,0 +1,1507 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HidroAlert 3D — Centro de Mando de Inundaciones</title>
+
+<!-- CesiumJS (globo 3D con terreno e imagen satelital) -->
+<link href="https://cdn.jsdelivr.net/npm/cesium@1.125/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.125/Build/Cesium/Cesium.js"></script>
+
+<style>
+/* ============================================================
+   HidroAlert 3D — Dark Glassmorphism / Centro de Mando
+   ============================================================ */
+:root{
+  --glass-bg: rgba(10, 18, 30, .62);
+  --glass-brd: rgba(120, 180, 255, .18);
+  --glass-hi:  rgba(140, 200, 255, .10);
+  --cyan:      #4fc3f7;
+  --blue:      #1e88e5;
+  --deep:      #0d47a1;
+  --red:       #ff5252;
+  --amber:     #ffb300;
+  --green:     #66bb6a;
+  --txt:       #e8f1fb;
+  --txt-dim:   #9fb6cc;
+  --mono: 'Consolas','SF Mono','Roboto Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body,#cesiumContainer{width:100%;height:100%;overflow:hidden;background:#04080f}
+body{font-family:'Segoe UI',system-ui,sans-serif;color:var(--txt)}
+
+/* ---------- utilidades glass ---------- */
+.glass{
+  background:var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border:1px solid var(--glass-brd);
+  border-radius:14px;
+  box-shadow:0 8px 32px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+/* ---------- HUD superior ---------- */
+#hudTop{
+  position:fixed;top:14px;left:50%;transform:translateX(-50%);
+  display:flex;gap:22px;align-items:center;padding:10px 26px;z-index:900;
+}
+#hudTop .logo{font-weight:800;font-size:1.05em;letter-spacing:.5px}
+#hudTop .logo .w{color:var(--cyan)}
+#hudTop .lvl{
+  font-family:var(--mono);font-weight:800;font-size:1.15em;padding:2px 16px;
+  border-radius:8px;letter-spacing:2px;transition:background .4s,color .4s;
+}
+.lvl-VERDE   {background:rgba(102,187,106,.18);color:var(--green);border:1px solid var(--green)}
+.lvl-AMARILLO{background:rgba(255,179,0,.18);  color:var(--amber);border:1px solid var(--amber)}
+.lvl-ROJO    {background:rgba(255,82,82,.22);  color:var(--red); border:1px solid var(--red); animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,82,82,.5)}50%{box-shadow:0 0 18px 4px rgba(255,82,82,.35)}}
+#hudTop .aoi{font-size:.8em;color:var(--txt-dim)}
+#hudTop .src{font-size:.72em;color:var(--txt-dim);opacity:.8}
+
+/* ---------- Resumen del evento sobre el mapa ---------- */
+#eventHud{
+  position:fixed;top:74px;left:14px;z-index:880;width:238px;
+  padding:12px 14px;border-radius:14px;transition:opacity .3s;
+}
+#eventHud .title{
+  font-size:.62em;letter-spacing:1.8px;color:var(--cyan);font-weight:700;
+  text-transform:uppercase;margin-bottom:8px;
+}
+#eventHud .evMain{
+  display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:10px;
+  background:linear-gradient(160deg,rgba(21,101,192,.28),rgba(30,136,229,.10));
+  border:1px solid rgba(66,140,255,.45);margin-bottom:8px;cursor:pointer;
+  transition:all .2s;
+}
+#eventHud .evMain:hover{filter:brightness(1.25);transform:translateX(2px)}
+#eventHud .evMain .evK{font-size:.64em;color:#9ecbff;text-transform:uppercase;letter-spacing:1.2px}
+#eventHud .evMain .evV{font-family:var(--mono);font-size:1.5em;font-weight:800;color:#bfe0ff}
+#eventHud .evRow{
+  display:flex;justify-content:space-between;align-items:center;gap:6px;
+  font-size:.74em;color:var(--txt-dim);padding:4px 2px;
+  border-bottom:1px dashed rgba(255,255,255,.07);
+}
+#eventHud .evRow:last-child{border-bottom:none}
+#eventHud .evRow.clk{cursor:pointer;transition:all .2s}
+#eventHud .evRow.clk:hover{background:rgba(255,255,255,.05);transform:translateX(2px)}
+#eventHud .evRow b{font-family:var(--mono);color:var(--txt);font-size:.95em;text-align:right}
+#eventHud .evRow b.red{color:var(--red)}
+#eventHud .evRow b.amb{color:var(--amber)}
+#eventHud .evRow b.grn{color:var(--green)}
+
+/* ---------- Panel de control lateral ---------- */
+#panel{
+  position:fixed;top:74px;right:14px;bottom:14px;width:308px;z-index:900;
+  padding:16px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;
+}
+#panel::-webkit-scrollbar{width:6px}
+#panel::-webkit-scrollbar-thumb{background:rgba(140,180,255,.25);border-radius:3px}
+#panel h3{
+  font-size:.72em;text-transform:uppercase;letter-spacing:2.2px;
+  color:var(--cyan);margin:6px 0 2px;font-weight:700;
+}
+#panel h3::before{content:'▍';margin-right:6px;opacity:.8}
+
+/* sliders */
+.ctl{margin:8px 0 4px}
+.ctl label{display:flex;justify-content:space-between;font-size:.82em;color:var(--txt-dim);margin-bottom:4px}
+.ctl label b{color:var(--txt);font-family:var(--mono);font-size:.95em}
+input[type=range]{
+  -webkit-appearance:none;width:100%;height:4px;border-radius:2px;
+  background:linear-gradient(90deg,var(--cyan) var(--fill,50%),rgba(255,255,255,.12) var(--fill,50%));
+  outline:none;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+  background:var(--cyan);border:2px solid #0a1220;
+  box-shadow:0 0 10px rgba(79,195,247,.8);cursor:pointer;
+}
+
+/* ---------- selector de zona ---------- */
+.zoneSel{
+  width:100%;padding:9px 10px;border-radius:9px;font-size:.8em;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1px solid var(--glass-brd);color:var(--txt);
+  outline:none;transition:border-color .2s;
+}
+.zoneSel:focus{border-color:var(--cyan)}
+.zoneSel option{background:#0a1220;color:var(--txt)}
+
+/* escenarios */
+.scenes{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.scenes button{
+  padding:8px 4px;font-size:.72em;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1px solid var(--glass-brd);color:var(--txt-dim);
+  transition:all .25s;
+}
+.scenes button:hover{background:var(--glass-hi);transform:translateY(-1px)}
+.scenes button.on{
+  background:linear-gradient(160deg,rgba(79,195,247,.25),rgba(30,136,229,.15));
+  border-color:var(--cyan);color:#fff;box-shadow:0 0 12px rgba(79,195,247,.25);
+}
+
+/* capas conmutables */
+.layers{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.lay{
+  display:flex;align-items:center;gap:7px;padding:7px 10px;font-size:.78em;
+  border-radius:8px;cursor:pointer;background:rgba(255,255,255,.04);
+  border:1px solid transparent;color:var(--txt-dim);transition:all .2s;user-select:none;
+}
+.lay:hover{background:var(--glass-hi)}
+.lay.on{border-color:rgba(79,195,247,.45);color:var(--txt);background:rgba(79,195,247,.10)}
+.lay .dot{width:8px;height:8px;border-radius:50%;background:var(--txt-dim)}
+.lay.on .dot{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+
+/* acciones */
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.acts button{
+  padding:9px;border-radius:9px;font-size:.78em;cursor:pointer;font-weight:600;
+  border:1px solid var(--glass-brd);background:rgba(255,255,255,.05);color:var(--txt);
+  transition:all .25s;
+}
+.acts button:hover{background:var(--glass-hi);border-color:var(--cyan)}
+.acts button.primary{
+  background:linear-gradient(160deg,rgba(255,82,82,.35),rgba(198,40,40,.2));
+  border-color:rgba(255,82,82,.6);
+}
+.acts button.primary:hover{box-shadow:0 0 14px rgba(255,82,82,.35)}
+
+/* hotspots: lista COMPLETA con scroll propio */
+#hotspots{
+  display:flex;flex-direction:column;gap:5px;
+  max-height:262px;overflow-y:auto;padding-right:3px;
+}
+#hotspots::-webkit-scrollbar{width:5px}
+#hotspots::-webkit-scrollbar-thumb{background:rgba(140,180,255,.3);border-radius:3px}
+.hot{
+  padding:7px 10px;font-size:.76em;border-radius:8px;cursor:pointer;
+  background:rgba(255,82,82,.08);border:1px solid rgba(255,82,82,.25);
+  transition:all .2s;display:flex;justify-content:space-between;gap:6px;
+}
+.hot:hover{background:rgba(255,82,82,.2);transform:translateX(-2px)}
+.hot .idx{font-family:var(--mono);color:var(--red);font-weight:700}
+.hot .hotlbl{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hot .coords{display:block;font-family:var(--mono);font-size:.82em;opacity:.6;white-space:normal;letter-spacing:.3px}
+.hot a.gmap{color:var(--cyan);text-decoration:none;font-size:1.05em;flex:none}
+.hot .fly{flex:none;cursor:pointer}
+
+/* banner de riesgo de huayco (falla de quebrada / flujo de detritos) */.huayco{
+  padding:8px 10px;font-size:.72em;line-height:1.45;border-radius:9px;
+  border:1px solid transparent;transition:all .25s;
+}
+.huayco.on{
+  background:linear-gradient(160deg,rgba(198,40,40,.35),rgba(255,82,82,.15));
+  border-color:rgba(255,82,82,.65);color:#ffd7d7;font-weight:600;
+  box-shadow:0 0 14px rgba(255,82,82,.3);animation:huaycoPulse 1.6s infinite;
+}
+@keyframes huaycoPulse{0%,100%{box-shadow:0 0 8px rgba(255,82,82,.2)}50%{box-shadow:0 0 18px rgba(255,82,82,.45)}}
+.huayco.off{
+  background:rgba(76,175,80,.08);border-color:rgba(76,175,80,.3);
+  color:var(--txt-dim);
+}
+
+/* botones de ficha técnica (modelos / precisión) */
+.hotInfo{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:2px 0 6px}
+.hotInfo button{
+  padding:7px 4px;font-size:.72em;border-radius:8px;cursor:pointer;font-weight:600;
+  border:1px solid var(--glass-brd);background:rgba(255,255,255,.05);color:var(--txt);
+  transition:all .25s;
+}
+.hotInfo button:hover{background:var(--glass-hi);border-color:var(--cyan)}
+
+/* botón FEN del estado vacío (sin inundación) */
+.fenBtn{
+  width:100%;margin-top:6px;padding:9px;border-radius:9px;font-size:.76em;cursor:pointer;
+  font-weight:700;border:1px solid rgba(255,82,82,.55);color:#ffd7d7;
+  background:linear-gradient(160deg,rgba(198,40,40,.38),rgba(255,82,82,.18));
+  transition:all .25s;
+}
+.fenBtn:hover{box-shadow:0 0 16px rgba(255,82,82,.4);transform:translateY(-1px)}
+
+/* chip de nivel de peligro por foco */
+.lvtag{flex:none;font-size:.62em;font-weight:700;letter-spacing:.6px;padding:1px 7px;border-radius:20px;white-space:nowrap;align-self:center}
+.lvtag.ROJO{background:rgba(255,82,82,.22);color:#ff8a80;border:1px solid rgba(255,82,82,.45)}
+.lvtag.AMARILLO{background:rgba(255,193,7,.16);color:#ffd54f;border:1px solid rgba(255,193,7,.4)}
+.lvtag.lvmax{background:rgba(156,80,255,.22);color:#cf9bff;border:1px solid rgba(156,80,255,.45)}
+
+/* ficha de foco: ¿por qué es zona de peligro? (abre al hacer clic) */
+#hotCard{
+  position:fixed;right:336px;bottom:52px;width:308px;min-width:260px;
+  max-width:calc(100vw - 360px);
+  max-height:56vh;overflow-y:auto;padding:14px 16px;border-radius:14px;
+  display:none;z-index:970;
+  background:rgba(10,18,28,.94);border:1px solid rgba(255,82,82,.4);
+  box-shadow:0 12px 40px rgba(0,0,0,.55);
+}
+#hotCard.show{display:block;animation:cardIn .18s ease-out}
+@keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+#hotCard h4{margin:0;font-size:.92em;display:flex;justify-content:space-between;align-items:center;gap:8px}
+#hotCard h4 .close{cursor:pointer;opacity:.65;font-size:1.1em;flex:none}
+#hotCard h4 .close:hover{opacity:1}
+#hotCard .sub{font-size:.68em;color:var(--txt-dim);margin:5px 0 10px;font-family:var(--mono);letter-spacing:.3px}
+#hotCard .sub a{color:var(--cyan);text-decoration:none}
+#hotCard .whyT{font-size:.7em;text-transform:uppercase;letter-spacing:1.4px;color:var(--red);margin-bottom:7px;font-weight:700}
+#hotCard ul{margin:0;padding-left:18px}
+#hotCard li{font-size:.78em;line-height:1.55;margin-bottom:6px;color:var(--txt)}
+#hotCard li::marker{color:var(--red)}
+#hotCard::-webkit-scrollbar{width:5px}
+#hotCard::-webkit-scrollbar-thumb{background:rgba(140,180,255,.3);border-radius:3px}
+
+/* toggle de escorrentía sobre terreno */
+.tgl{
+  display:flex;align-items:center;gap:9px;padding:8px 10px;font-size:.78em;
+  border-radius:8px;cursor:pointer;background:rgba(255,255,255,.04);
+  border:1px solid transparent;color:var(--txt-dim);transition:all .2s;user-select:none;
+  margin:6px 0 2px;
+}
+.tgl:hover{background:var(--glass-hi)}
+.tgl.on{border-color:rgba(79,195,247,.45);color:var(--txt);background:rgba(79,195,247,.10)}
+.tgl input{accent-color:var(--cyan);width:14px;height:14px;cursor:pointer;margin:0}
+.tgl .dot{width:8px;height:8px;border-radius:50%;background:var(--txt-dim)}
+.tgl.on .dot{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+
+/* predicción 48 h */
+.fc{margin-top:4px}
+.fc-line{font-size:.74em;opacity:.9;line-height:1.55;margin:3px 0}
+.fc-chart{display:flex;align-items:flex-end;gap:1px;height:38px;margin:8px 0 2px}
+.fc-bar{flex:1;min-width:3px;border-radius:1px 1px 0 0;opacity:.75;transition:opacity .2s}
+.fc-bar:hover{opacity:1;outline:1px solid rgba(255,255,255,.5)}
+.fc-note{font-size:.66em;opacity:.65;margin-top:3px;line-height:1.5}
+.fcBtn{
+  padding:9px;border-radius:9px;font-size:.78em;cursor:pointer;font-weight:600;
+  border:1px solid var(--glass-brd);background:rgba(255,255,255,.05);color:var(--txt);
+  transition:all .25s;width:100%;
+}
+.fcBtn:hover{background:var(--glass-hi);border-color:var(--cyan)}
+.fcBtn:disabled{opacity:.55;cursor:wait}
+
+/* ---------- barra inferior ---------- */
+#hudBottom{
+  position:fixed;bottom:14px;left:14px;right:336px;z-index:900;
+  display:flex;gap:10px;align-items:center;padding:8px 16px;
+  font-family:var(--mono);font-size:.72em;color:var(--txt-dim);
+}
+#hudBottom .sep{opacity:.35}
+#hudBottom b{color:var(--cyan)}
+
+/* toast */
+#toast{
+  position:fixed;bottom:70px;right:336px;z-index:990;padding:12px 18px;
+  font-size:.85em;display:none;max-width:420px;
+}
+#toast.show{display:block;animation:toastIn .3s}
+@keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* timestamp */
+#clock{font-family:var(--mono)}
+
+/* Cesium tweaks */
+.cesium-widget-credits{display:none!important}
+.cesium-viewer-toolbar,.cesium-viewer-bottom{display:none!important}
+</style>
+</head>
+<body>
+
+<div id="cesiumContainer"></div>
+
+<!-- HUD superior -->
+<div id="hudTop" class="glass">
+  <span class="logo">🌊 Hidro<span class="w">Alert</span> 3D</span>
+  <span class="lvl lvl-VERDE" id="lvl">VERDE</span>
+  <span class="aoi" id="aoiName">—</span>
+  <span class="src" id="srcTag"></span>
+  <span id="clock" class="src"></span>
+</div>
+
+<!-- Resumen del evento sobre el mapa (fuente única de indicadores) -->
+<div id="eventHud" class="glass">
+  <div class="title">📋 Evento en curso</div>
+  <div class="evMain" id="evMain" title="Clic: volar al punto de máxima lámina">
+    <span class="evK">🌊 Área inundada</span>
+    <span class="evV" id="evArea">—</span>
+  </div>
+  <div class="evRow"><span>💧 Volumen desbordado</span><b id="evVol">—</b></div>
+  <div class="evRow"><span>📏 Lámina máxima</span><b id="evDepth">—</b></div>
+  <div class="evRow clk" id="evBld" title="Clic: volar a la vivienda más afectada"><span>🏠 Viviendas afectadas</span><b id="evBldV">—</b></div>
+  <div class="evRow clk" id="evRoads" title="Clic: volar a la vía más comprometida"><span>🚧 Vías bloqueadas</span><b id="evRoadsV">—</b></div>
+  <div class="evRow"><span>🌾 Tierras de cultivo</span><b id="evFarm">—</b></div>
+  <div class="evRow"><span>🛰️ SAR observado</span><b id="evSar">—</b></div>
+  <div class="evRow" id="evOverRow" style="display:none"><span>💧 Escorrentía (pozas)</span><b id="evOver">—</b></div>
+</div>
+
+<!-- Panel de mando -->
+<div id="panel" class="glass">
+  <h3>Zona de vigilancia</h3>
+  <select id="zoneSel" class="zoneSel"></select>
+
+  <h3>Escenario</h3>
+  <div class="scenes" id="scenes">
+    <button data-p="ligera">💧 Ligera</button>
+    <button data-p="moderada" class="on">🌧️ Moderada</button>
+    <button data-p="fen">⛈️ FEN</button>
+  </div>
+
+  <div class="ctl">
+    <label>🌧️ Lluvia <b id="valLluvia">35 mm/h</b></label>
+    <input type="range" id="lluvia" min="0" max="200" value="35" step="5">
+  </div>
+  <div class="ctl">
+    <label>📈 Caudal <b id="valCaudal">+80 %</b></label>
+    <input type="range" id="caudal" min="0" max="300" value="80" step="10">
+  </div>
+  <div class="tgl" id="tglOverland" title="Escorrentía superficial (ruteo D8): la lluvia fluye celda a celda cuesta abajo y se concentra en las depresiones del terreno, además del desborde del cauce.">
+    <input type="checkbox" id="overland">
+    <span class="dot"></span>
+    <span>💧 Escorrentía sobre terreno</span>
+  </div>
+
+  <h3>Predicción 48 h</h3>
+  <button class="fcBtn" id="btnForecast">🌦️ Consultar pronóstico</button>
+  <div id="fcBox" class="fc" style="display:none"></div>
+
+  <h3>Capas</h3>
+  <div class="layers" id="layers">
+    <div class="lay on" data-l="satellite"><span class="dot"></span>Satélite</div>
+    <div class="lay on" data-l="water"><span class="dot"></span>Agua 3D</div>
+    <div class="lay on" data-l="buildings"><span class="dot"></span>Viviendas (puntos)</div>
+    <div class="lay on" data-l="roads"><span class="dot"></span>Vías</div>
+    <div class="lay on" data-l="farmland"><span class="dot"></span>🌾 Agricultura</div>
+    <div class="lay" data-l="sar"><span class="dot"></span>Radar SAR</div>
+    <div class="lay on" data-l="drainage"><span class="dot"></span>Drenaje 3D</div>
+    <div class="lay on" data-l="terrain"><span class="dot"></span>Terreno 3D</div>
+  </div>
+
+  <h3>Focos críticos <span id="hotCount" style="color:var(--txt-dim)"></span></h3>
+  <div id="huaycoTag" class="huayco off">…</div>
+  <div class="hotInfo">
+    <button id="btnModels" title="Modelos de simulación utilizados">🧪 Modelos</button>
+    <button id="btnPrec" title="Precisión y validación del modelo">🎯 Precisión</button>
+  </div>
+  <div id="hotspots"><div class="hot" style="opacity:.5">Sin inundación activa</div></div>
+
+  <div style="flex:1"></div>
+  <div class="acts">
+    <button id="btnAlert">🚨 Disparar alerta</button>
+    <button id="btnCoe">🛰️ Modo COE</button>
+    <button id="btnOrbit">🎥 Sobrevuelo</button>
+    <button class="primary" id="btnPdf">🧾 Boletín PDF</button>
+  </div>
+</div>
+
+<!-- Barra de estado -->
+<div id="hudBottom" class="glass">
+  <span>⚡ Motor: <b id="mTime">—</b></span><span class="sep">|</span>
+  <span>🧩 Celdas agua: <b id="mCells">—</b></span><span class="sep">|</span>
+  <span>🏠 Puntos 3D: <b id="mBld">—</b></span><span class="sep">|</span>
+  <span>🛰️ Fuente: <b id="mSrc">—</b></span><span class="sep">|</span>
+  <span id="mMsg">Listo.</span>
+</div>
+
+<div id="toast" class="glass"></div>
+
+<!-- Ficha de foco crítico: ¿por qué es zona de peligro? (abre al hacer clic) -->
+<div id="hotCard">
+  <h4><span id="hcTitle">Foco crítico</span><span class="close" id="hcClose" title="Cerrar">✕</span></h4>
+  <div class="sub" id="hcSub"></div>
+  <div class="whyT" id="hcWhyT">⚠️ ¿Por qué es zona de peligro?</div>
+  <ul id="hcWhy"></ul>
+</div>
+
+<script>
+/* ============================================================
+   HidroAlert 3D — Centro de Mando (CesiumJS)
+   ============================================================ */
+Cesium.Ion.defaultAccessToken = ''; // se asigna desde /api/geo/config si existe
+
+const API = location.origin; // la API sirve esta página: mismo host y puerto
+let viewer, waterDataSource, sarDataSource, bldDataSource, roadsDataSource, drainageDataSource, flowDataSource, zoneDataSource, farmDataSource;
+let osmBuildingsTileset = null;  // 3D Tiles de OSM Buildings (requiere Ion)
+let current = null;          // último payload
+let orbiting = false, orbitAngle = 0, orbitTarget = null;
+let layerState = {satellite:true, water:true, buildings:true, roads:true, farmland:true, sar:false, drainage:true, terrain:true};
+let debounceTimer = null;
+let zonesCatalog = [];   // catálogo /zones
+let currentZone = null;  // id de zona activa
+
+// ---------- Init del globo ----------
+async function initCesium(){
+  viewer = new Cesium.Viewer('cesiumContainer', {
+    animation:false, timeline:false, baseLayerPicker:false, geocoder:false,
+    homeButton:false, sceneModePicker:false, navigationHelpButton:false,
+    fullscreenButton:false, infoBox:false, selectionIndicator:false,
+    baseLayer:false, imageryProvider:false,
+    requestRenderMode:true, maximumRenderTimeChange:Infinity,
+  });
+  // Iluminado solar APAGADO: sin él, el hemisferio nocturno se ve negro
+  viewer.scene.globe.enableLighting = false;
+  viewer.scene.skyAtmosphere.show = true;
+  viewer.scene.fog.enabled = true;
+  viewer.scene.globe.depthTestAgainstTerrain = true;
+  viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#0a1622');
+
+  // Imagen satelital: GOOGLE Satellite (mosaico global, misma fuente que el
+  // dashboard). A diferencia de ESRI World Imagery —que en zonas rurales de
+  // Camaná responde con el cartel gris "Map data not yet available"— Google
+  // SIEMPRE tiene tesela a cualquier nivel (en el peor caso re-escalada).
+  // Respaldo: ESRI con tope de nivel 17.
+  let baseLayer = null;
+  try{
+    const g = new Cesium.UrlTemplateImageryProvider({
+      url: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+      maximumLevel: 20,
+      credit: 'Google Satellite',
+    });
+    baseLayer = viewer.imageryLayers.addImageryProvider(g);
+    baseLayer.brightness = 1.1;
+    baseLayer.contrast = 1.03;
+  }catch(e){
+    console.warn('Google tiles falló → ESRI (tope nivel 17)', e);
+    const esri = new Cesium.UrlTemplateImageryProvider({
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      maximumLevel: 17,
+      credit: 'Esri World Imagery',
+    });
+    baseLayer = viewer.imageryLayers.addImageryProvider(esri);
+  }
+
+  // Forza carga del tile inicial bajo la cámara
+  viewer.scene.globe.show = true;
+  viewer.scene.globe.tileCacheSize = 120;
+  // Anti-overzoom: límite de acercamiento (con Google Satellite a nivel 20
+  // hay datos de sobra; 120 m permite inspeccionar viviendas sin pixelar).
+  viewer.scene.screenSpaceCameraController.minimumZoomDistance = 120;
+
+  // Terreno 3D + OSM Buildings vía Cesium Ion (si el backend tiene token).
+  // Sin Ion: elipsoide + imagen satelital pública (modo sin credenciales).
+  window.__terrainReal = false;
+  try{
+    const cfg = await (await fetch(`${API}/api/geo/config`)).json();
+    if (cfg.cesium_ion_token) {
+      Cesium.Ion.defaultAccessToken = cfg.cesium_ion_token;
+      try {
+        viewer.terrainProvider = await Cesium.CesiumTerrainProvider.fromIonAssetId(1); // World Terrain
+        window.__terrainReal = true;
+        console.log('Cesium World Terrain activo (Ion)');
+      } catch(e) { console.warn('World Terrain falló → elipsoide', e); }
+      try {
+        osmBuildingsTileset = await Cesium.Cesium3DTileset.fromIonAssetId(96188); // OSM Buildings
+        viewer.scene.primitives.add(osmBuildingsTileset);
+        console.log('OSM Buildings 3D activo (Ion)');
+      } catch(e) { console.warn('OSM Buildings no disponible', e); }
+    }
+  }catch(e){ console.warn('Sin config Ion, modo público', e); }
+  if (!window.__terrainReal) {
+    viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+  }
+
+  waterDataSource = new Cesium.CustomDataSource('water');
+  sarDataSource    = new Cesium.CustomDataSource('sar');
+  bldDataSource    = new Cesium.CustomDataSource('buildings');
+  roadsDataSource  = new Cesium.CustomDataSource('roads');
+  drainageDataSource = new Cesium.CustomDataSource('drainage');
+  flowDataSource     = new Cesium.CustomDataSource('flow');
+  zoneDataSource     = new Cesium.CustomDataSource('zone');
+  farmDataSource     = new Cesium.CustomDataSource('farmland');
+  viewer.dataSources.add(waterDataSource);
+  viewer.dataSources.add(sarDataSource);
+  viewer.dataSources.add(bldDataSource);
+  viewer.dataSources.add(roadsDataSource);
+  viewer.dataSources.add(drainageDataSource);
+  viewer.dataSources.add(flowDataSource);
+  viewer.dataSources.add(zoneDataSource);
+  viewer.dataSources.add(farmDataSource);
+
+  clockTick(); setInterval(clockTick, 1000);
+
+  // Clic sobre el mapa 3D → ficha de peligro: vivienda afectada (punto rojo)
+  // o vía bloqueada (polilínea / marcador 🚧), igual que en la lista de focos.
+  new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas).setInputAction(evt=>{
+    const picked = viewer.scene.pick(evt.position);
+    const ent = picked && picked.id;
+    if(!ent) return;
+    if(ent.__farmData){ openFarmCard(ent.__farmData); return; }
+    if(ent.__roadData){ openRoadCard(ent.__roadData); return; }
+    if(ent.__hotIdx !== undefined && current && current.hotspots[ent.__hotIdx]){
+      const h = current.hotspots[ent.__hotIdx];
+      openHotCard(h, ent.__hotIdx);
+    }
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+  await loadZones();  // catálogo de zonas + selector
+
+  // Escenario por URL (?escenario=fen|moderada|ligera): enlace compartible
+  const qp = new URLSearchParams(location.search);
+  const esc = qp.get('escenario');
+  if(esc && PRESETS[esc]) applyPreset(esc);
+  else simulate();  // primera simulación (zona por defecto)
+}
+
+// ---------- Catálogo de zonas y selector multi-zona ----------
+async function loadZones(){
+  try{
+    const r = await fetch(`${API}/zones`);
+    const data = await r.json();
+    zonesCatalog = data.zones || [];
+    currentZone = data.default || (zonesCatalog[0] && zonesCatalog[0].id) || null;
+    const sel = document.getElementById('zoneSel');
+    sel.innerHTML = '';
+    for(const z of zonesCatalog){
+      const opt = document.createElement('option');
+      opt.value = z.id; opt.textContent = z.name;
+      if(z.id === currentZone) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    sel.onchange = ()=>{
+      currentZone = sel.value;
+      const z = zonesCatalog.find(x=>x.id===currentZone);
+      window.__camInit = false; // re-vuela la cámara a la nueva zona
+      if(z){
+        // flyTo inmediato al centro de la nueva zona (animación de sobrevuelo)
+        const [lon, lat] = z.bbox
+          ? [(z.bbox[0]+z.bbox[2])/2, (z.bbox[1]+z.bbox[3])/2]
+          : [null, null];
+        if(lon!==null){
+          viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(lon, lat-0.015, 5200),
+            orientation:{heading:Cesium.Math.toRadians(20),
+                         pitch:Cesium.Math.toRadians(-42), roll:0},
+            duration: 2.0
+          });
+        }
+        toast(`📍 Zona: ${z.name}`);
+      }
+      simulate();
+    };
+  }catch(e){ console.warn('No se pudo cargar /zones', e); }
+}
+
+function clockTick(){
+  document.getElementById('clock').textContent =
+    new Date().toISOString().slice(0,19).replace('T',' ') + ' UTC';
+}
+
+// ---------- Simulación (llama al backend) ----------
+async function simulate(){
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(async ()=>{
+    const lluvia = +document.getElementById('lluvia').value;
+    const caudal = +document.getElementById('caudal').value;
+    document.getElementById('mMsg').textContent = 'Simulando…';
+    const t0 = performance.now();
+    try{
+      const zq = currentZone ? `&zone=${encodeURIComponent(currentZone)}` : '';
+      const oq = document.getElementById('overland').checked ? '&overland=true' : '';
+      const sq = layerState.sar ? '&sar=true' : '';   // SAR bajo demanda
+      const resp = await fetch(`${API}/api/geo/simulate?precipitation_mm_h=${lluvia}&flow_increase_pct=${caudal}${zq}${oq}${sq}`);
+      if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      current = await resp.json();
+      renderAll();
+      document.getElementById('mTime').textContent = `${Math.round(performance.now()-t0)} ms`;
+      document.getElementById('mMsg').textContent = 'Escenario actualizado.';
+    }catch(e){
+      document.getElementById('mMsg').textContent = `⚠️ Backend: ${e.message}. ¿Está corriendo uvicorn :8000?`;
+    }
+  }, 220);
+}
+
+// ---------- Render 3D del payload ----------
+function renderAll(){
+  const d = current;
+  // Primer vuelo de cámara hacia el AOI (la vista por defecto está en el espacio)
+  if(!window.__camInit && d.aoi && d.aoi.center){
+    window.__camInit = true;
+    const [lon, lat] = d.aoi.center;
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(lon, lat - 0.02, 6500),
+      orientation: {heading: 0, pitch: Cesium.Math.toRadians(-38), roll: 0}
+    });
+  }
+  // HUD superior
+  const lvl = d.kpi.level;
+  const el = document.getElementById('lvl');
+  el.textContent = lvl; el.className = `lvl lvl-${lvl}`;
+  document.getElementById('aoiName').textContent = d.aoi.name;
+  document.getElementById('srcTag').textContent =
+    (d.aoi.demo ? '🧪 demo' : '🛰️ GEE real') + ' · bankfull ' + d.scenario.bankfull_m.toFixed(2)+' m';
+
+  // Banner de riesgo de HUAYCO (falla de quebrada / flujo de detritos)
+  const hy = document.getElementById('huaycoTag');
+  const risk = !!(d.huayco && d.huayco.risk);
+  if(d.huayco){
+    hy.className = 'huayco ' + (risk ? 'on' : 'off');
+    hy.textContent = d.huayco.message;
+  }
+  // Toast al activarse el riesgo de huayco
+  if(risk && !window.__huaycoPrev) toast('⚠️ RIESGO DE HUAYCO: posible falla de quebrada / flujo de detritos');
+  window.__huaycoPrev = risk;
+
+  document.getElementById('mCells').textContent = d.water.features.length;
+  document.getElementById('mBld').textContent   = d.buildings.features.length;
+  document.getElementById('mSrc').textContent   = d.aoi.demo ? 'demo' : 'GEE';
+
+  renderWater(d);
+  renderSar(d);
+  renderBuildings(d);
+  renderRoads(d);
+  renderDrainage(d);
+  renderZone(d);        // zona de vigilancia del combo, dibujada sobre el mapa
+  renderEventHud(d);    // resumen del evento sobre el mapa (área inundada)
+  renderFarmland(d);    // marcadores 🌾 de terrenos agrícolas que se inundan
+  renderHotspots(d);
+  startPropagation(d);   // animación temporal 6 h de la inundación
+  applyLayers();
+  viewer.scene.requestRender();
+}
+
+// ---------- Resumen del evento sobre el mapa (fuente única de indicadores) ----------
+function renderEventHud(d){
+  const eh = document.getElementById('eventHud');
+  eh.style.opacity = d.kpi.flooded_ha > 0 ? '1' : '.55';
+  document.getElementById('evArea').textContent =
+    d.kpi.flooded_ha >= 100 ? `${(d.kpi.flooded_ha/100).toFixed(1)} km²` : `${d.kpi.flooded_ha.toFixed(1)} ha`;
+  document.getElementById('evVol').textContent = fmtVol(d.kpi.volume_m3);
+  document.getElementById('evVol').className = clsByVol(d.kpi.volume_m3);
+  const dEl = document.getElementById('evDepth');
+  dEl.textContent = d.kpi.max_depth_m.toFixed(2)+' m';
+  dEl.className = d.kpi.max_depth_m>0.8?'red':(d.kpi.max_depth_m>0.3?'amb':'grn');
+  const bEl = document.getElementById('evBldV');
+  bEl.textContent = d.kpi.buildings_affected;
+  bEl.className = d.kpi.buildings_affected>=15?'red':(d.kpi.buildings_affected>=5?'amb':'grn');
+  const rEl = document.getElementById('evRoadsV');
+  rEl.textContent = `${d.kpi.roads_blocked} / ${d.kpi.roads_total}`;
+  rEl.className = d.kpi.roads_blocked>0?'amb':'grn';
+  const fEl = document.getElementById('evFarm');
+  fEl.textContent = (d.kpi.farmland_flooded_ha || 0) > 0
+    ? `${d.kpi.farmland_flooded_ha} ha` : '—';
+  fEl.className = (d.kpi.farmland_flooded_ha || 0) > 0 ? 'amb' : '';
+  const sEl = document.getElementById('evSar');
+  sEl.textContent = d.kpi.sar_water_ha > 0 ? `${d.kpi.sar_water_ha} ha` : '—';
+  const oRow = document.getElementById('evOverRow');
+  if(d.kpi.overland_volume_m3 > 0){
+    oRow.style.display = '';
+    const oEl = document.getElementById('evOver');
+    oEl.textContent = fmtVol(d.kpi.overland_volume_m3);
+    oEl.className = clsByVol(d.kpi.overland_volume_m3);
+  }else{
+    oRow.style.display = 'none';
+  }
+}
+
+// ---------- Terrenos agrícolas que serán inundados (marcadores 🌾) ----------
+function renderFarmland(d){
+  farmDataSource.entities.removeAll();
+  if(!d.farmland || !d.farmland.length) return;
+  for(const fd of d.farmland){
+    const ent = farmDataSource.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(fd.lon, fd.lat, 12),
+      point: {
+        pixelSize: new Cesium.CallbackProperty(
+          ()=> 13 + 5*Math.abs(Math.sin(performance.now()/320)), false),
+        color: Cesium.Color.fromBytes(121,180,84,250),
+        outlineColor: Cesium.Color.WHITE.withAlpha(.85), outlineWidth: 2,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        scaleByDistance: new Cesium.NearFarScalar(2000, 1.6, 40000, 0.5),
+      },
+      label: {
+        text: `🌾 ${fd.ha} ha`,
+        font: 'bold 12px sans-serif',
+        fillColor: Cesium.Color.fromCssColorString('#d9f2c8'),
+        outlineColor: Cesium.Color.BLACK, outlineWidth: 3,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        pixelOffset: new Cesium.Cartesian2(0, -24),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        showBackground: true,
+        backgroundColor: Cesium.Color.fromCssColorString('rgba(46,90,20,.82)'),
+        backgroundPadding: new Cesium.Cartesian2(6,3),
+        scaleByDistance: new Cesium.NearFarScalar(2000, 1.3, 40000, 0.45),
+      },
+      description: `🌾 <b>TERRENO AGRÍCOLA INUNDADO</b> · ${fd.ha} ha (${fd.pct}% del fundo) · lámina media ${fd.depth_cm} cm`
+    });
+    ent.__farmData = fd;  // ficha "¿por qué es zona de peligro?" al clic
+  }
+}
+
+// ---------- Ficha de terreno agrícola (igual que vivienda / vía) ----------
+function openFarmCard(fd){
+  const lat = (+fd.lat).toFixed(6), lon = (+fd.lon).toFixed(6);
+  fillCard(
+    `🌾 Terreno agrícola · ${fd.ha} ha inundadas`,
+    `${lat}, ${lon} · ${fd.pct}% del fundo afectado · <a href="https://maps.google.com/?q=${lat},${lon}" target="_blank" rel="noopener">Google Maps ↗</a>`,
+    (fd.why && fd.why.length) ? fd.why : ['Terreno agrícola dentro de la mancha de inundación.'],
+    '⚠️ ¿Por qué es zona de peligro?'
+  );
+}
+
+// ---------- Zona de vigilancia (combo) sobre el mapa ----------
+function renderZone(d){
+  zoneDataSource.entities.removeAll();
+  if(!d.aoi || !d.aoi.bbox) return;
+  const [w, s, e, n] = d.aoi.bbox;
+  const ring = [[w,s],[e,s],[e,n],[w,n],[w,s]];
+  // Relleno sutil: extensión exacta del área monitoreada
+  zoneDataSource.entities.add({
+    polygon:{
+      hierarchy: Cesium.Cartesian3.fromDegreesArray(ring.flat()),
+      material: Cesium.Color.fromBytes(79,195,247,10),
+      height: 2,
+      outline: false
+    }
+  });
+  // Borde discontinuo cian (zona de vigilancia)
+  zoneDataSource.entities.add({
+    polyline:{
+      positions: Cesium.Cartesian3.fromDegreesArray(ring.flat()),
+      width: 2.5,
+      material: new Cesium.PolylineDashMaterialProperty({
+        color: Cesium.Color.fromBytes(79,195,247,230),
+        dashLength: 18,
+      }),
+      clampToGround: false
+    }
+  });
+  // Rótulo en el borde superior de la zona
+  zoneDataSource.entities.add({
+    position: Cesium.Cartesian3.fromDegrees((w+e)/2, n, 30),
+    label: {
+      text: `👁 ZONA DE VIGILANCIA — ${d.aoi.name}`,
+      font: 'bold 13px sans-serif',
+      fillColor: Cesium.Color.fromCssColorString('#b3e5fc'),
+      outlineColor: Cesium.Color.BLACK, outlineWidth: 3,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      showBackground: true,
+      backgroundColor: Cesium.Color.fromCssColorString('rgba(10,30,50,.72)'),
+      backgroundPadding: new Cesium.Cartesian2(8,5),
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      scaleByDistance: new Cesium.NearFarScalar(4000, 1.2, 80000, 0.55),
+      distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 420000),
+    }
+  });
+}
+
+function fmtVol(v){ return v>=1e6 ? (v/1e6).toFixed(2)+' M m³' : v>=1e3 ? (v/1e3).toFixed(0)+' k m³' : v.toFixed(0)+' m³'; }
+function clsByVol(v){ return v>=400000?'red': v>=50000?'amb':'grn'; }
+
+const DCOLOR = [[129,212,250,150],[30,136,229,190],[13,71,161,225]];
+
+// ============================================================
+// ANIMACIÓN TEMPORAL DEL AGUA (oleaje + propagación 6 h)
+// ============================================================
+// Estado de la animación:
+//   * propagation: la mancha crece de hora 0 a hora 6 re-pintando las celdas
+//     cuya máscara ya "llegó" según el paso temporal del evento simulado.
+//   * oleaje: cada celda oscila ±2 m de altura y varía su opacidad con una
+//     onda senoidal desfasada por posición (efecto de superficie viva).
+let animState = { masks: [], shapes: [], hour: 0, t0: 0, waterFeatures: [] };
+const WAVE_AMP_M = 1.6;        // amplitud del oleaje (m, sobre la exageración)
+const WAVE_SPEED = 1.8;        // rad/s
+const PROP_DURATION_MS = 9000; // duración de la propagación 0→6 h en pantalla
+const WAVE_MAX_CELLS = 600;    // por encima: agua estática (rendimiento GPU)
+
+// Descompresión de máscaras zlib+base64 (nativo en navegadores modernos;
+// sin DecompressionStream se omite la animación y se ve la mancha final).
+async function decodeMask(enc, shape){
+  if(!enc || !window.DecompressionStream) return null;
+  try{
+    const bin = Uint8Array.from(atob(enc), ch=>ch.charCodeAt(0));
+    const stream = new Blob([bin]).stream().pipeThrough(new DecompressionStream('deflate'));
+    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    return {bytes, shape};
+  }catch(e){ return null; }
+}
+
+async function startPropagation(d){
+  animState.waterFeatures = d.water.features;
+  animState.hour = 0;
+  animState.t0 = performance.now();
+  animState.masks = [];
+  // Descompresión en paralelo (cada máscara pasa de ~100 KB hex a ~2 KB)
+  try{
+    animState.masks = await Promise.all(
+      (d.propagation||[]).map(s=>decodeMask(s.mask, s.shape))
+    );
+  }catch(e){ animState.masks = []; }
+  if (animState.masks.filter(Boolean).length > 1) requestAnimationFrame(propagationStep);
+}
+
+function propagationStep(){
+  const el = performance.now() - animState.t0;
+  const frac = Math.min(1, el / PROP_DURATION_MS);
+  const targetHour = Math.floor(frac * 6);
+  if (targetHour !== animState.hour && animState.masks[targetHour]){
+    animState.hour = targetHour;
+    repaintWaterAtHour(targetHour);
+    viewer.scene.requestRender();
+  }
+  if (frac < 1) requestAnimationFrame(propagationStep);
+}
+
+function repaintWaterAtHour(h){
+  // Muestra solo las celdas cuya máscara existe en la hora h (crece)
+  const m = animState.masks[h];
+  if (!m) return;
+  let shown = 0;
+  for (const f of animState.waterFeatures){
+    const p = f.properties;
+    const ent = waterDataSource.entities.getById(f.__id);
+    if (!ent) continue;
+    const on = m.bytes[p.__row * m.shape[1] + p.__col] === 1;
+    ent.show = on;
+    if (on) shown++;
+  }
+  document.getElementById('mCells').textContent = shown;
+}
+
+function renderWater(d){
+  waterDataSource.entities.removeAll();
+  // Rendimiento: con muchas celdas el agua es ESTÁTICA (sin CallbackProperty
+  // por entidad, que obliga a re-evaluar miles de propiedades cada frame).
+  const animated = d.water.features.length <= WAVE_MAX_CELLS;
+  // En escenas medianas se puede permitir el contorno de alarma en celdas profundas
+  const outlineOk = d.water.features.length <= 1500;
+  window.__waveActive = false;
+  let id = 0;
+  for(const f of d.water.features){
+    const p = f.properties, ring = f.geometry.coordinates[0];
+    const base = window.__terrainReal ? (p.base || 0) : 0;
+    const h0 = (p.dclass===2 ? 12 : p.dclass===1 ? 7 : 4);
+    const c = DCOLOR[p.dclass||0];
+    const alpha = Math.min(1, c[3]/255 + 0.15);
+    const isDeep = p.dclass===2;   // >80 cm: peligro para personas y vehículos
+    let material, extruded;
+    if (animated){
+      window.__waveActive = true;
+      const phase = (p.__col||id*7) * 0.7 + (p.__row||0) * 0.5; // desfase del oleaje
+      extruded = new Cesium.CallbackProperty(
+        ()=> base + h0 + WAVE_AMP_M * Math.sin(performance.now()/1000 * WAVE_SPEED + phase), false);
+      material = new Cesium.ColorMaterialProperty(
+        new Cesium.CallbackProperty(()=>{
+          const t = performance.now()/1000 * WAVE_SPEED + phase;
+          const k = 0.75 + 0.25 * Math.sin(t); // brillo oscilante
+          if(isDeep){  // ADVERTENCIA: agua profunda late azul → ROJO de peligro
+            const m = 0.5 + 0.5 * Math.sin(performance.now()/450 + phase);
+            return new Cesium.Color(
+              Math.min(1, c[0]/255 + m*0.6),
+              c[1]/255 * (1 - m*0.55),
+              c[2]/255 * (1 - m*0.35),
+              Math.min(1, alpha*k + 0.15));
+          }
+          return new Cesium.Color(c[0]/255, c[1]/255, c[2]/255, Math.min(1, alpha*k + 0.15));
+        }, false));
+    } else {
+      extruded = base + h0;
+      material = Cesium.Color.fromBytes(c[0], c[1], c[2], Math.round(alpha*255));
+    }
+    waterDataSource.entities.add({
+      id: String(id),  // imprescindible para lookup en la animación de propagación
+      polygon:{
+        hierarchy:Cesium.Cartesian3.fromDegreesArray(ring.flat()),
+        extrudedHeight: extruded,
+        height: base + 0.4,
+        material: material,
+        outline: isDeep && outlineOk,   // borde de alarma en celdas profundas
+        outlineColor: Cesium.Color.fromBytes(255,61,61,220),
+        outlineWidth: 2,
+      },
+      description: `Lámina: <b>${p.depth_cm} cm</b>`
+        + (isDeep ? ' — <b style="color:#ff5252">⚠️ PELIGRO</b> (>80 cm: personas y vehículos)'
+                  : p.dclass===1 ? ' — riesgo (>30 cm)' : ' — inundación leve')
+    });
+    f.__id = String(id); id++;
+  }
+  // Reloj de oleaje: solo pide renders mientras haya agua ANIMADA (escenas livianas)
+  if (animated && !window.__waveLoop){
+    window.__waveLoop = true;
+    (function waveLoop(){
+      if (window.__waveActive && waterDataSource.entities.values.length){
+        viewer.scene.requestRender(); // repinta el oleaje
+      }
+      setTimeout(waveLoop, 200);
+    })();
+  }
+}
+
+function renderSar(d){
+  sarDataSource.entities.removeAll();
+  for(const f of d.sar_water.features){
+    const ring = f.geometry.coordinates[0];
+    const baseS = window.__terrainReal ? (f.properties.base||0) : 0;
+    sarDataSource.entities.add({
+      polygon:{
+        hierarchy:Cesium.Cartesian3.fromDegreesArray(ring.flat()),
+        height: baseS + 1.0,
+        material:Cesium.Color.fromBytes(127,219,255,90),
+        outline:false
+      }
+    });
+  }
+}
+
+function renderBuildings(d){
+  bldDataSource.entities.removeAll();
+  // Viviendas como PUNTOS: visibles a cualquier zoom y mucho más ligeros
+  // que las huellas extruidas. Las afectadas (rojo, borde blanco) ignoran
+  // el test de profundidad ⇒ nunca quedan tapadas por terreno ni agua.
+  for(const f of d.buildings.features){
+    const p = f.properties;
+    const [lon, lat] = f.geometry.coordinates;
+    const baseB = window.__terrainReal ? (p.base||0) : 0;
+    const ent = bldDataSource.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lon, lat, baseB + 2),
+      point: {
+        pixelSize: p.affected ? 13 : 6,
+        color: p.affected
+          ? Cesium.Color.fromBytes(255,61,61,245)
+          : Cesium.Color.fromBytes(176,190,210,140),
+        outlineColor: p.affected
+          ? Cesium.Color.fromBytes(255,255,255,220)
+          : Cesium.Color.TRANSPARENT,
+        outlineWidth: p.affected ? 1.5 : 0,
+        disableDepthTestDistance: p.affected ? Number.POSITIVE_INFINITY : 0,
+        scaleByDistance: new Cesium.NearFarScalar(600, 1.4, 9000, 0.5),
+        translucencyByDistance: new Cesium.NearFarScalar(600, 1.0, 12000, 0.6),
+      },
+      description: p.affected
+        ? `⚠️ Vivienda afectada · lámina ${p.depth_cm} cm`
+        : 'Sin riesgo'
+    });
+    // Vivienda afectada ↔ foco crítico (F#): coordenadas del payload redondeadas
+    // a 6 decimales vs centroides full-precision ⇒ vecino más cercano (~<1 m).
+    if(p.affected && d.hotspots){
+      let best=-1, bd=Infinity;
+      for(let j=0;j<d.hotspots.length;j++){
+        const hs=d.hotspots[j];
+        if(hs.kind==='max_depth') continue;
+        const dd=(hs.lon-lon)**2 + (hs.lat-lat)**2;
+        if(dd<bd){ bd=dd; best=j; }
+      }
+      if(best>=0 && bd<=1e-10) ent.__hotIdx = best;
+    }
+  }
+}
+
+function renderRoads(d){
+  roadsDataSource.entities.removeAll();
+  window.__worstRoad = null;  // la vía más comprometida (para el banner de advertencia)
+  let nMarkers = 0;
+  for(const f of d.roads.features){
+    const p=f.properties;
+    const coords = f.geometry.coordinates;
+    const flat = (f.geometry.type==='LineString') ? coords : coords.flat();
+    const ent = roadsDataSource.entities.add({
+      polyline:{
+        positions:Cesium.Cartesian3.fromDegreesArray(flat.flat()),
+        width:p.blocked?9:2,
+        material:p.blocked
+          ? new Cesium.PolylineGlowMaterialProperty({
+              // ADVERTENCIA: la vía bloqueada late en rojo-naranja intenso
+              color: new Cesium.CallbackProperty(()=>{
+                const k = 0.55 + 0.45 * Math.sin(performance.now()/230);
+                return Cesium.Color.fromBytes(255, Math.round(80 + 90*k), 0);
+              }, false),
+              glowPower:.5,
+            })
+          : Cesium.Color.fromBytes(160,160,160,150),
+        clampToGround:true
+      },
+      description: p.blocked
+        ? `🚧 <b>VÍA BLOQUEADA</b> · ${p.depth_cm} cm de agua — intransitable`
+        : 'Vía transitable'
+    });
+    // Ficha "¿por qué es zona de peligro?" al hacer clic (como las viviendas)
+    const roadData = p.blocked && p.mid
+      ? {road_id:p.road_id, depth_cm:p.depth_cm, level:p.level,
+         lon:p.mid[0], lat:p.mid[1], why:p.why||[]}
+      : null;
+    if(roadData) ent.__roadData = roadData;
+    // Marcador 🚧 en el punto medio de cada vía bloqueada (tope 30 por rendimiento)
+    if(p.blocked && nMarkers < 30){
+      const mid = p.mid || (()=>{  // respaldo: punto medio calculado en cliente
+        const nPairs = flat.length / 2;
+        const i0 = Math.floor(nPairs/2) * 2;
+        return [flat[i0], flat[i0+1]];
+      })();
+      if(Number.isFinite(mid[0]) && Number.isFinite(mid[1])){
+        nMarkers++;
+        const mEnt = roadsDataSource.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(mid[0], mid[1], 6),
+          point: {
+            pixelSize: new Cesium.CallbackProperty(
+              ()=> 11 + 6*Math.abs(Math.sin(performance.now()/260)), false),
+            color: Cesium.Color.fromBytes(255,152,0,245),
+            outlineColor: Cesium.Color.WHITE.withAlpha(.85), outlineWidth: 2,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            scaleByDistance: new Cesium.NearFarScalar(1500, 1.6, 25000, 0.5),
+          },
+          label: {
+            text: `🚧 ${p.depth_cm} cm`,
+            font: 'bold 12px sans-serif',
+            fillColor: Cesium.Color.fromCssColorString('#ffe0b2'),
+            outlineColor: Cesium.Color.BLACK, outlineWidth: 3,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            pixelOffset: new Cesium.Cartesian2(0, -22),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            showBackground: true,
+            backgroundColor: Cesium.Color.fromCssColorString('rgba(140,55,0,.8)'),
+            backgroundPadding: new Cesium.Cartesian2(6,3),
+            scaleByDistance: new Cesium.NearFarScalar(1500, 1.3, 25000, 0.45),
+          }
+        });
+        if(roadData) mEnt.__roadData = roadData;
+        if(!window.__worstRoad || p.depth_cm > window.__worstRoad.depth_cm){
+          window.__worstRoad = roadData || {lon:mid[0], lat:mid[1], depth_cm:p.depth_cm, road_id:p.road_id, why:[]};
+        }
+      }
+    }
+  }
+}
+
+function renderHotspots(d){
+  const box = document.getElementById('hotspots');
+  const cnt = document.getElementById('hotCount');
+  if(cnt) cnt.textContent = d.hotspots.length ? `· ${d.hotspots.length}` : '';
+  hideHotCard();  // los índices cambian con cada simulación
+  box.innerHTML='';
+  if(!d.hotspots.length){
+    // Escenario sin desborde: guiar al usuario en vez de dejar la lista vacía
+    box.innerHTML =
+      `<div class="hot" style="opacity:.78;cursor:default">Sin inundación en este escenario: el cauce contiene el flujo (bankfull ${d.scenario.bankfull_m.toFixed(2)} m).</div>` +
+      `<button class="fenBtn" id="btnFenQuick" title="120 mm/h · +250 %">⛈️ Cargar FEN y ver las casas afectadas</button>`;
+    document.getElementById('btnFenQuick').onclick = ()=>applyPreset('fen');
+    return;
+  }
+  // Lista COMPLETA de focos críticos (scroll): nivel, lámina, COORDENADAS y
+  // link a Google Maps para navegación de campo + flyTo 3D por foco.
+  // Al hacer clic se abre la ficha "¿por qué es zona de peligro?".
+  d.hotspots.forEach((h,i)=>{
+    const el = document.createElement('div');
+    el.className='hot';
+    const lat = (+h.lat).toFixed(6), lon = (+h.lon).toFixed(6);
+    const chip = h.kind==='max_depth'
+      ? '<span class="lvtag lvmax">MÁX</span>'
+      : `<span class="lvtag ${h.level==='ROJO'?'ROJO':'AMARILLO'}">${h.level||'AMARILLO'}</span>`;
+    el.innerHTML =
+      `<span class="idx">F${i+1}</span>` +
+      chip +
+      `<span class="hotlbl">${h.label}<span class="coords">${lat}, ${lon}</span></span>` +
+      `<a class="gmap" href="https://maps.google.com/?q=${lat},${lon}" target="_blank" rel="noopener" title="Abrir en Google Maps">🗺️</a>` +
+      `<span class="fly" title="Volar a este foco">🎯</span>`;
+    el.onclick = ()=>{
+      flyTo(h.lon, h.lat, 900, h.label, true);  // quiet: la ficha ya informa
+      openHotCard(h, i);
+    };
+    el.querySelector('.gmap').onclick = e=>e.stopPropagation();
+    el.querySelector('.fly').onclick = e=>{ e.stopPropagation(); flyTo(h.lon, h.lat, 900, h.label); };
+    box.appendChild(el);
+  });
+}
+
+// ---------- Ficha de foco: enumeración de motivos de peligro ----------
+function fillCard(title, subHtml, items, whyTitle){
+  document.getElementById('hcTitle').textContent = title;
+  document.getElementById('hcSub').innerHTML = subHtml;
+  document.getElementById('hcWhyT').textContent = whyTitle;
+  const ul = document.getElementById('hcWhy');
+  ul.innerHTML = '';
+  (items || []).forEach(w=>{
+    const li = document.createElement('li');
+    li.textContent = w;
+    ul.appendChild(li);
+  });
+  document.getElementById('hotCard').classList.add('show');
+}
+
+function openHotCard(h, i){
+  const lat = (+h.lat).toFixed(6), lon = (+h.lon).toFixed(6);
+  const why = (h.why && h.why.length) ? h.why : ['Foco dentro de la mancha de inundación.'];
+  fillCard(
+    `F${i+1} · ${h.label}`,
+    `${lat}, ${lon} · <a href="https://maps.google.com/?q=${lat},${lon}" target="_blank" rel="noopener">Google Maps ↗</a>`,
+    why,
+    '⚠️ ¿Por qué es zona de peligro?'
+  );
+}
+function hideHotCard(){
+  document.getElementById('hotCard').classList.remove('show');
+}
+document.getElementById('hcClose').onclick = hideHotCard;
+
+// ---------- Ficha de vía bloqueada (igual que la de vivienda) ----------
+function openRoadCard(rd){
+  const lat = (+rd.lat).toFixed(6), lon = (+rd.lon).toFixed(6);
+  fillCard(
+    `🚧 Vía bloqueada · ${rd.depth_cm} cm`,
+    `${lat}, ${lon}${rd.road_id ? ` · id ${rd.road_id}` : ''} · <a href="https://maps.google.com/?q=${lat},${lon}" target="_blank" rel="noopener">Google Maps ↗</a>`,
+    (rd.why && rd.why.length) ? rd.why : ['Lámina de agua sobre la vía: intransitable.'],
+    '⚠️ ¿Por qué es zona de peligro?'
+  );
+}
+
+// ---------- Ficha técnica: modelos de simulación y precisión ----------
+function openModelsCard(){
+  if(!current || !current.models) return;
+  const m = current.models;
+  fillCard(
+    '🧪 Modelos de simulación',
+    `${current.aoi.name} · escenario ${current.scenario.precipitation_mm_h} mm/h · +${current.scenario.flow_increase_pct} %`,
+    [m.hydraulic, m.bankfull, m.runoff, m.sar, m.forecast, m.exposure].filter(Boolean),
+    'Pipeline hidrológico — HidroAlert'
+  );
+}
+
+function openPrecisionCard(){
+  if(!current || !current.precision) return;
+  const p = current.precision;
+  const items = [];
+  items.push(`Resolución de trabajo: celda de ${p.cell_m} m (precisión posicional ±${p.cell_m} m).`);
+  items.push(`Base topográfica: MERIT DEM/HAND (~${p.hand_base_m} m nativo) remuestreada a la celda de trabajo.`);
+  if(p.sar_iou_pct !== null && p.sar_iou_pct !== undefined){
+    let s = `Validación con Sentinel-1: concordancia IoU ${p.sar_iou_pct} %`;
+    if(p.sar_pod_pct !== null && p.sar_pod_pct !== undefined) s += ` · detección (POD) ${p.sar_pod_pct} %`;
+    if(p.sar_far_pct !== null && p.sar_far_pct !== undefined) s += ` · falsas alarmas (FAR) ${p.sar_far_pct} %`;
+    s += ` — ${p.sar_area_ha} ha de agua observadas (última imagen: condición actual, no del escenario).`;
+    items.push(s);
+  }else{
+    items.push('Validación con Sentinel-1: sin observación disponible para esta zona.');
+  }
+  items.push(`Calibración: ${p.calibration} — bankfull ${p.bankfull_m} m en esta zona.`);
+  items.push('Naturaleza determinista: la certeza depende del escenario seleccionado; el modelo NO estima la probabilidad estadística de ocurrencia del evento.');
+  items.push(p.note);
+  fillCard('🎯 Precisión del modelo', current.aoi.name, items, 'Exactitud y alcance');
+}
+document.getElementById('btnModels').onclick = openModelsCard;
+document.getElementById('btnPrec').onclick = openPrecisionCard;
+
+// ---------- Cámara ----------
+function flyTo(lon, lat, rangeM=900, label='', quiet=false){
+  viewer.camera.flyTo({
+    destination:Cesium.Cartesian3.fromDegrees(lon, lat-0.006, rangeM),
+    orientation:{heading:Cesium.Math.toRadians(0), pitch:Cesium.Math.toRadians(-35), roll:0},
+    duration:1.6,
+    complete:()=>{ if(!quiet) toast(`🎯 ${label||'Foco crítico'}`) }
+  });
+}
+function orbitToggle(){
+  orbiting=!orbiting;
+  document.getElementById('btnOrbit').style.borderColor = orbiting?'var(--cyan)':'';
+  if(orbiting && current){
+    const c=current.aoi.center;
+    orbitTarget={lon:c[0],lat:c[1]};
+    orbitStep();
+  }
+}
+function orbitStep(){
+  if(!orbiting||!orbitTarget) return;
+  orbitAngle=(orbitAngle+0.8)%360;
+  const r=0.012;
+  viewer.camera.flyToBoundingSphere(
+    new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(orbitTarget.lon,orbitTarget.lat,0), 1400),
+    {offset:new Cesium.HeadingPitchRange(Cesium.Math.toRadians(orbitAngle),Cesium.Math.toRadians(-32),0), duration:0}
+  );
+  setTimeout(orbitStep,60);
+}
+
+// ---------- Toast ----------
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2600);
+}
+
+// ---------- Capas ----------
+function applyLayers(){
+  waterDataSource.show     = layerState.water;
+  sarDataSource.show       = layerState.sar;
+  bldDataSource.show       = layerState.buildings;
+  roadsDataSource.show     = layerState.roads;
+  farmDataSource.show      = layerState.farmland;
+  drainageDataSource.show  = layerState.drainage;
+  flowDataSource.show      = layerState.drainage; // partículas junto al cauce
+  if (osmBuildingsTileset) osmBuildingsTileset.show = layerState.buildings;
+}
+
+// ---------- Captura para la alerta ----------
+async function snapshotPng(){
+  viewer.scene.requestRenderMode=false;
+  viewer.render();
+  const canvas=viewer.canvas;
+  const out=document.createElement('canvas');
+  out.width=canvas.width; out.height=canvas.height;
+  const ctx=out.getContext('2d');
+  ctx.drawImage(canvas,0,0);
+  viewer.scene.requestRenderMode=true;
+  return out.toDataURL('image/png');
+}
+
+// ---------- Alerta (Twilio/Webhook vía backend + captura 3D) ----------
+async function fireAlert(){
+  if(!current) return;
+  const png = await snapshotPng();
+  const lvlEl=document.getElementById('lvl');
+  try{
+    const resp=await fetch(`${API}/api/alert/trigger`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        precipitation_mm_h:+document.getElementById('lluvia').value,
+        flow_increase_pct:+document.getElementById('caudal').value,
+        zone: currentZone,
+        screenshot_png: png.split(',')[1],
+      })
+    });
+    const out=await resp.json();
+    toast(out.sent?`🚨 Alerta ${out.level} enviada (Twilio:${out.twilio_count}, Webhook:${out.webhook_ok?'OK':'off'})`
+                  :`Nivel ${out.level} — sin canales configurados`);
+  }catch(e){ toast('⚠️ Error disparando alerta: '+e.message); }
+}
+
+// ---------- Predicción de lluvias 48 h (escorrentía incorporada) ----------
+async function loadForecast(){
+  const btn = document.getElementById('btnForecast');
+  btn.disabled = true; btn.textContent = '🌦️ Consultando…';
+  document.getElementById('mMsg').textContent = 'Propagando pronóstico 48 h (1ª vez puede tardar: ingesta satelital)…';
+  const t0 = performance.now();
+  try{
+    const resp = await fetch(`${API}/forecast-timeline?max_hours=48`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({zone: currentZone})
+    });
+    if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    renderForecast(await resp.json());
+    document.getElementById('mMsg').textContent =
+      `Pronóstico listo en ${(Math.round(performance.now()-t0)/1000).toFixed(1)} s`;
+  }catch(e){
+    toast('⚠️ Pronóstico: '+e.message);
+    document.getElementById('mMsg').textContent = '⚠️ Pronóstico falló';
+  }finally{
+    btn.disabled = false; btn.textContent = '🌦️ Consultar pronóstico';
+  }
+}
+
+function renderForecast(fc){
+  const box = document.getElementById('fcBox');
+  box.style.display = '';
+  const rt  = fc.rise_to || {};
+  const am  = rt.AMARILLO, ro = rt.ROJO;
+  const bars = (fc.timeline||[]).map(t=>{
+    const color = t.level==='ROJO' ? 'var(--red)' : t.level==='AMARILLO' ? 'var(--amber)' : 'var(--green)';
+    const h = Math.min(38, Math.max(2, t.mm_h/3.5));
+    const tip = `${t.time.slice(11,16)} UTC · ${t.mm_h} mm/h · ${t.level}`
+      + ` · vol ${fmtInt(t.volume_m3)} m³ · escorrentía ${fmtInt(t.overland_volume_m3)} m³`
+      + (t.buildings ? ` · ${t.buildings} viv.` : '');
+    return `<div class="fc-bar" title="${tip}" style="background:${color};height:${h}px"></div>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="fc-line">Fuente: <b>${fc.source}</b> · pico <b>${fc.peak.mm_h} mm/h</b> a las ${fc.peak.time.slice(11,16)} UTC</div>
+    <div class="fc-line">${ro ? `🔴 ROJO: <b>${ro.slice(11,16)} UTC</b>` : '✅ Sin ROJO en 48 h'} · ${am ? `🟡 AMARILLO: <b>${am.slice(11,16)} UTC</b>` : '✅ Sin AMARILLO en 48 h'}</div>
+    <div class="fc-chart">${bars}</div>
+    <div class="fc-note">Cada barra = 1 h (altura: lluvia · color: nivel de alerta). El nivel incorpora la <b>concentración de agua sobre terreno</b> (escorrentía D8). Pase el mouse por una barra para ver el detalle.</div>`;
+  toast(ro ? `🚨 Cruce a ROJO previsto: ${ro.slice(11,16)} UTC`
+           : am ? `⚠️ Cruce a AMARILLO previsto: ${am.slice(11,16)} UTC`
+                : '✅ Sin cruces de nivel en 48 h');
+}
+function fmtInt(v){ return Math.round(v||0).toLocaleString('es-PE'); }
+
+// ---------- Eventos UI ----------
+document.getElementById('lluvia').addEventListener('input',e=>{
+  document.getElementById('valLluvia').textContent = e.target.value+' mm/h';
+  e.target.style.setProperty('--fill',(e.target.value/200*100)+'%');
+  simulate();
+});
+document.getElementById('caudal').addEventListener('input',e=>{
+  document.getElementById('valCaudal').textContent='+'+e.target.value+' %';
+  e.target.style.setProperty('--fill',(e.target.value/300*100)+'%');
+  simulate();
+});
+const PRESETS={ligera:{l:5,c:10},moderada:{l:35,c:80},fen:{l:120,c:250}};
+function applyPreset(key){
+  const p=PRESETS[key]; if(!p) return;
+  document.querySelectorAll('#scenes button').forEach(x=>x.classList.toggle('on', x.dataset.p===key));
+  const ll=document.getElementById('lluvia'),ca=document.getElementById('caudal');
+  ll.value=p.l; ca.value=p.c;
+  ll.dispatchEvent(new Event('input')); ca.dispatchEvent(new Event('input'));
+}
+document.getElementById('scenes').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  applyPreset(b.dataset.p);
+});
+document.getElementById('layers').addEventListener('click',e=>{
+  const el=e.target.closest('.lay'); if(!el)return;
+  const key=el.dataset.l;
+  if(key==='terrain'){ toast('Terreno: ' + (window.__terrainReal ? 'Cesium World Terrain (Ion) activo' : 'elipsoide — configure CESIUM_ION_TOKEN en .env')); return; }
+  if(key==='satellite'){ toast('Use el botón de capa base de Cesium (oculto) para cambiar base'); return; }
+  layerState[key]=!layerState[key];
+  el.classList.toggle('on',layerState[key]);
+  applyLayers(); viewer.scene.requestRender();
+  // El radar SAR viaja bajo demanda: al activarlo, traer la capa si no está
+  if(key==='sar' && layerState[key] &&
+     !(current && current.sar_water && current.sar_water.features.length)) simulate();
+});
+document.getElementById('btnAlert').onclick=fireAlert;
+document.getElementById('btnOrbit').onclick=orbitToggle;
+document.getElementById('btnForecast').onclick=loadForecast;
+document.getElementById('btnCoe').onclick=()=>toast('🛰️ Modo COE: monitoree indicadores y focos, y use 🚨 Disparar alerta al escalar');
+
+// Resumen del evento: filas clicables (epicentro / vivienda y vía peores)
+document.getElementById('evMain').onclick=()=>{
+  if(!current) return;
+  const i = current.hotspots.findIndex(x=>x.kind==='max_depth');
+  if(i>=0){ const h = current.hotspots[i]; flyTo(h.lon, h.lat, 1100, h.label, true); openHotCard(h, i); }
+};
+document.getElementById('evBld').onclick=()=>{
+  if(!current || !current.hotspots.length) return;
+  const h = current.hotspots[0];  // F1: la de mayor lámina (lista ordenada)
+  flyTo(h.lon, h.lat, 900, h.label, true);
+  openHotCard(h, 0);
+};
+document.getElementById('evRoads').onclick=()=>{
+  const w = window.__worstRoad;
+  if(w){
+    flyTo(w.lon, w.lat, 700, '', true);
+    openRoadCard(w);
+  }
+  else toast('🚧 No hay geometría de vías bloqueadas en esta zona');
+};
+document.getElementById('tglOverland').onclick=e=>{
+  const box=e.currentTarget, chk=document.getElementById('overland');
+  chk.checked=!chk.checked;
+  box.classList.toggle('on', chk.checked);
+  toast(chk.checked ? '💧 Escorrentía sobre terreno activada (pozas en depresiones, ruteo D8)'
+                    : '💧 Escorrentía sobre terreno desactivada');
+  simulate();
+};
+document.getElementById('btnPdf').onclick=async()=>{
+  const png=(await snapshotPng()).split(',')[1];
+  try{
+    const resp=await fetch(`${API}/api/report/pdf`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        precipitation_mm_h:+document.getElementById('lluvia').value,
+        flow_increase_pct:+document.getElementById('caudal').value,
+        zone: currentZone,
+        screenshot_png:png,
+      })
+    });
+    const out=await resp.json();
+    toast('🧾 '+out.pdf);
+  }catch(e){toast('⚠️ '+e.message)}
+};
+
+// ============================================================
+// RED DE DRENAJE 3D: cauce principal (MERIT 'upa') + partículas de flujo
+// ============================================================
+function renderDrainage(d){
+  drainageDataSource.entities.removeAll();
+  flowDataSource.entities.removeAll();
+  const fc = d.drainage;
+  if (!fc || !fc.features.length) return;
+
+  // Riesgo de huayco: las quebradas se pintan ROJAS y pulsan, con marcador
+  // de advertencia en la cabecera (donde ocurre la falla de quebrada).
+  const huayco = !!(d.huayco && d.huayco.risk);
+  window.__huaycoMode = huayco;
+
+  for (const f of fc.features){
+    const coords = f.geometry.coordinates; // [[lon,lat,elev], ...]
+    const flat = coords.flat();
+    // Línea del cauce: glow cian (normal) o ROJO pulsante (riesgo de huayco)
+    drainageDataSource.entities.add({
+      polyline:{
+        positions: Cesium.Cartesian3.fromDegreesArrayHeights(flat),
+        width: huayco ? 10 : 6,
+        material: new Cesium.PolylineGlowMaterialProperty({
+          color: huayco
+            ? new Cesium.CallbackProperty(()=>{  // rojo que late
+                const k = 0.6 + 0.4*Math.sin(performance.now()/180);
+                return Cesium.Color.fromBytes(255, Math.round(40*k), Math.round(40*k));
+              }, false)
+            : Cesium.Color.fromBytes(79,195,247),
+          glowPower: huayco ? .55 : .35,
+          taperPower: .6,
+        }),
+        clampToGround: false
+      },
+      description: huayco
+        ? `<b style="color:#ff5252">⚠️ RIESGO DE HUAYCO</b> — quebrada con posible falla / flujo de detritos · área upstream máx: <b>${f.properties.upa_max_km2} km²</b>`
+        : `Cauce · área upstream máx: <b>${f.properties.upa_max_km2} km²</b>`
+    });
+
+    // Marcador pulsante en la CABEZA de la quebrada (solo con riesgo de huayco)
+    if (huayco && coords.length){
+      const head = coords[0];
+      drainageDataSource.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(head[0], head[1], (head[2]||0) + 25),
+        point: {
+          pixelSize: new Cesium.CallbackProperty(
+            ()=> 14 + 8*Math.abs(Math.sin(performance.now()/280)), false),
+          color: Cesium.Color.fromBytes(255,61,61,245),
+          outlineColor: Cesium.Color.fromCssColorString('#fff').withAlpha(.85),
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scaleByDistance: new Cesium.NearFarScalar(2000, 1.8, 30000, 0.5),
+        },
+        label: {
+          text: '⚠ HUAYCO',
+          font: 'bold 13px sans-serif',
+          fillColor: Cesium.Color.fromCssColorString('#ff8a80'),
+          outlineColor: Cesium.Color.BLACK, outlineWidth: 3,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          pixelOffset: new Cesium.Cartesian2(0, -26),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          showBackground: true,
+          backgroundColor: Cesium.Color.fromCssColorString('rgba(120,10,10,.8)'),
+          backgroundPadding: new Cesium.Cartesian2(7,4),
+          scaleByDistance: new Cesium.NearFarScalar(2000, 1.4, 30000, 0.45),
+        }
+      });
+    }
+
+    // Partículas de flujo: puntos que avanzan por el cauce (CallbackProperty)
+    const N_PART = Math.min(14, Math.max(4, Math.floor(coords.length / 8)));
+    for (let i = 0; i < N_PART; i++){
+      const offset = i / N_PART;
+      flowDataSource.entities.add({
+        position: new Cesium.CallbackProperty(()=>{
+          const t = ((performance.now()/1000 * 0.12) + offset) % 1;
+          const idx = t * (coords.length - 1);
+          const i0 = Math.floor(idx), i1 = Math.min(coords.length-1, i0+1);
+          const k = idx - i0;
+          const a = coords[i0], b = coords[i1];
+          return Cesium.Cartesian3.fromDegrees(
+            a[0] + (b[0]-a[0])*k,
+            a[1] + (b[1]-a[1])*k,
+            (a[2]||0) + ((b[2]||0)-(a[2]||0))*k + 8
+          );
+        }, false),
+        point: {
+          pixelSize: window.__huaycoMode ? 9 : 7,
+          color: new Cesium.CallbackProperty(()=>{
+            const fade = 0.4 + 0.6 * Math.sin(Math.PI * ((performance.now()/1000*0.12 + offset) % 1));
+            return window.__huaycoMode
+              ? Cesium.Color.fromBytes(255, 110, 90, Math.round(255 * Math.min(1, fade)))
+              : Cesium.Color.fromBytes(180, 235, 255, Math.round(255 * Math.min(1, fade)));
+          }, false),
+          outlineColor: window.__huaycoMode
+            ? Cesium.Color.fromBytes(255,61,61,140)
+            : Cesium.Color.fromBytes(79,195,247,120),
+          outlineWidth: 1,
+        }
+      });
+    }
+  }
+  // Bucle de repintado de partículas
+  if (!window.__flowLoop){
+    window.__flowLoop = true;
+    (function flowLoop(){
+      if (flowDataSource.entities.values.length){
+        viewer.scene.requestRender();
+      }
+      setTimeout(flowLoop, 90);
+    })();
+  }
+}
+
+// hover tooltip Cesium
+viewer && null;
+initCesium();
+</script>
+</body>
+</html>

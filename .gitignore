@@ -1,0 +1,19 @@
+# Entorno
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Reportes generados en runtime
+reports/
+*.pdf
+!docs/ejemplo_informe.pdf
+
+# Datos descargados
+data/
+*.tif
+*.tiff
+
+# Streamlit
+.streamlit/secrets.toml
