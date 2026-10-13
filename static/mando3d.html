@@ -295,6 +295,61 @@ input[type=range]::-webkit-slider-thumb{
 /* timestamp */
 #clock{font-family:var(--mono)}
 
+/* ============================================================
+   RESPONSIVE — celular / tablet / cualquier pantalla
+   ============================================================ */
+/* Botón de panel + fondo: solo visibles en pantallas angostas */
+#btnPanelToggle{
+  position:fixed;top:14px;right:14px;z-index:1000;display:none;
+  width:44px;height:44px;align-items:center;justify-content:center;
+  font-size:1.3em;cursor:pointer;border-radius:12px;user-select:none;
+}
+#btnPanelToggle:active{transform:scale(.94)}
+#panelBack{
+  position:fixed;inset:0;z-index:995;display:none;
+  background:rgba(0,0,0,.45);
+}
+
+/* Tablet y celular: el panel se vuelve cajón deslizable */
+@media (max-width: 900px){
+  #btnPanelToggle{display:flex}
+  #panel{
+    top:0;right:0;bottom:0;width:min(340px,88vw);
+    border-radius:0;z-index:1000;
+    transform:translateX(105%);
+    transition:transform .3s ease;
+  }
+  body.panelOpen #panel{transform:none}
+  body.panelOpen #panelBack{display:block}
+  #hudTop{
+    left:auto;right:70px;transform:none;gap:10px;padding:8px 14px;max-width:calc(100vw - 80px);
+  }
+  #hudTop .logo{display:none}
+  #eventHud{top:66px;left:10px;width:200px;padding:10px 12px}
+  #eventHud .evMain .evV{font-size:1.25em}
+  #hotCard{
+    left:10px;right:10px;bottom:46px;width:auto;min-width:0;max-width:none;
+  }
+  #toast{left:10px;right:10px;max-width:none;bottom:70px}
+  #hudBottom{right:10px;left:10px;flex-wrap:wrap;font-size:.62em;gap:6px}
+}
+
+/* Celular compacto */
+@media (max-width: 600px){
+  #hudTop{right:64px;padding:6px 10px;gap:8px}
+  #hudTop .src, #hudTop #clock{display:none}
+  #hudTop .aoi{font-size:.68em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38vw}
+  #eventHud{width:172px;top:60px;padding:8px 10px}
+  #eventHud .evMain .evV{font-size:1.1em}
+  #eventHud .evRow{font-size:.68em}
+  #eventHud .title{font-size:.56em;letter-spacing:1.2px}
+  #hudBottom .sep{display:none}
+  #hudBottom #mCells, #hudBottom #mBld{display:none}
+  #hotspots{max-height:200px}
+  .huayco{font-size:.66em}
+  .hotInfo button{font-size:.66em;padding:6px 2px}
+}
+
 /* Cesium tweaks */
 .cesium-widget-credits{display:none!important}
 .cesium-viewer-toolbar,.cesium-viewer-bottom{display:none!important}
@@ -313,9 +368,12 @@ input[type=range]::-webkit-slider-thumb{
   <span id="clock" class="src"></span>
 </div>
 
+<!-- Botón de panel (móvil/tablet) y fondo para cerrar el cajón -->
+<div id="btnPanelToggle" class="glass" title="Mostrar/ocultar panel de mando">☰</div>
+<div id="panelBack"></div>
+
 <!-- Resumen del evento sobre el mapa (fuente única de indicadores) -->
-<div id="eventHud" class="glass">
-  <div class="title">📋 Evento en curso</div>
+<div id="eventHud" class="glass">  <div class="title">📋 Evento en curso</div>
   <div class="evMain" id="evMain" title="Clic: volar al punto de máxima lámina">
     <span class="evK">🌊 Área inundada</span>
     <span class="evV" id="evArea">—</span>
@@ -552,6 +610,7 @@ async function loadZones(){
       sel.appendChild(opt);
     }
     sel.onchange = ()=>{
+      closePanelIfOpen();  // móvil: ver el vuelo a la nueva zona
       currentZone = sel.value;
       const z = zonesCatalog.find(x=>x.id===currentZone);
       window.__camInit = false; // re-vuela la cámara a la nueva zona
@@ -1066,7 +1125,7 @@ function renderHotspots(d){
     box.innerHTML =
       `<div class="hot" style="opacity:.78;cursor:default">Sin inundación en este escenario: el cauce contiene el flujo (bankfull ${d.scenario.bankfull_m.toFixed(2)} m).</div>` +
       `<button class="fenBtn" id="btnFenQuick" title="120 mm/h · +250 %">⛈️ Cargar FEN y ver las casas afectadas</button>`;
-    document.getElementById('btnFenQuick').onclick = ()=>applyPreset('fen');
+    document.getElementById('btnFenQuick').onclick = ()=>{ closePanelIfOpen(); applyPreset('fen'); };
     return;
   }
   // Lista COMPLETA de focos críticos (scroll): nivel, lámina, COORDENADAS y
@@ -1086,6 +1145,7 @@ function renderHotspots(d){
       `<a class="gmap" href="https://maps.google.com/?q=${lat},${lon}" target="_blank" rel="noopener" title="Abrir en Google Maps">🗺️</a>` +
       `<span class="fly" title="Volar a este foco">🎯</span>`;
     el.onclick = ()=>{
+      closePanelIfOpen();  // móvil: ver el mapa tras elegir el foco
       flyTo(h.lon, h.lat, 900, h.label, true);  // quiet: la ficha ya informa
       openHotCard(h, i);
     };
@@ -1321,6 +1381,7 @@ function applyPreset(key){
 }
 document.getElementById('scenes').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
+  closePanelIfOpen();  // móvil: ver la simulación al cambiar de escenario
   applyPreset(b.dataset.p);
 });
 document.getElementById('layers').addEventListener('click',e=>{
@@ -1339,6 +1400,24 @@ document.getElementById('btnAlert').onclick=fireAlert;
 document.getElementById('btnOrbit').onclick=orbitToggle;
 document.getElementById('btnForecast').onclick=loadForecast;
 document.getElementById('btnCoe').onclick=()=>toast('🛰️ Modo COE: monitoree indicadores y focos, y use 🚨 Disparar alerta al escalar');
+
+// ---------- Panel responsive (cajón en móvil/tablet) ----------
+const btnPanelToggle = document.getElementById('btnPanelToggle');
+function togglePanel(force){
+  const open = document.body.classList.toggle('panelOpen', force);
+  btnPanelToggle.textContent = open ? '✕' : '☰';
+}
+function closePanelIfOpen(){  // en móvil: cierra el cajón para ver el mapa
+  if(document.body.classList.contains('panelOpen')) togglePanel(false);
+}
+btnPanelToggle.onclick = ()=>togglePanel();
+document.getElementById('panelBack').onclick = ()=>togglePanel(false);
+// Al pasar a escritorio (redimensionar/girar), restaurar el estado normal
+window.addEventListener('resize', ()=>{
+  if(window.innerWidth > 900 && document.body.classList.contains('panelOpen')){
+    togglePanel(false);
+  }
+});
 
 // Resumen del evento: filas clicables (epicentro / vivienda y vía peores)
 document.getElementById('evMain').onclick=()=>{
