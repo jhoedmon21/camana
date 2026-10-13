@@ -1,0 +1,8 @@
+# Exclusiones para el despliegue en Vercel (además de .gitignore)
+tests/
+docs/
+dashboard/
+scripts/
+reports/
+.pytest_cache/
+.vercel/

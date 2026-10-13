@@ -1,20 +1,20 @@
-"""
-main.py — API REST de HidroAlert (FastAPI).
+﻿"""
+main.py â€” API REST de HidroAlert (FastAPI).
 
 Endpoints:
-    GET  /health               — estado del servicio y de las integraciones.
-    GET  /scenarios            — presets de escenarios (Ligera/Moderada/Torrencial).
-    POST /simulate             — ejecuta la simulación y devuelve métricas JSON.
-    POST /simulate-and-alert   — simulación + evaluación de alerta + notificación
+    GET  /health               â€” estado del servicio y de las integraciones.
+    GET  /scenarios            â€” presets de escenarios (Ligera/Moderada/Torrencial).
+    POST /simulate             â€” ejecuta la simulaciÃ³n y devuelve mÃ©tricas JSON.
+    POST /simulate-and-alert   â€” simulaciÃ³n + evaluaciÃ³n de alerta + notificaciÃ³n
                                  (Twilio/Webhook) + informe PDF/JSON en disco.
-    GET  /api/geo/simulate     — payload 3D para el Centro de Mando (CesiumJS).
-    POST /api/alert/trigger    — dispara alerta (Twilio/Webhook) con captura 3D.
-    POST /api/report/pdf       — boletín PDF con captura 3D incrustada.
-    GET  /mando3d              — interfaz 3D (Centro de Mando).
+    GET  /api/geo/simulate     â€” payload 3D para el Centro de Mando (CesiumJS).
+    POST /api/alert/trigger    â€” dispara alerta (Twilio/Webhook) con captura 3D.
+    POST /api/report/pdf       â€” boletÃ­n PDF con captura 3D incrustada.
+    GET  /mando3d              â€” interfaz 3D (Centro de Mando).
 
 Ejecutar en desarrollo:
     uvicorn hidroalert.api.main:app --reload --port 8000
-    → abrir http://localhost:8000/mando3d
+    â†’ abrir http://localhost:8000/mando3d
 """
 
 from __future__ import annotations
@@ -53,22 +53,22 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="HidroAlert API",
     description=(
-        "Monitoreo, simulación y alerta temprana de inundaciones, desbordes de ríos "
+        "Monitoreo, simulaciÃ³n y alerta temprana de inundaciones, desbordes de rÃ­os "
         "y fallas de quebradas (workspace jhons-workspace-amus9)."
     ),
     version=__version__,
 )
 
-# Compresión HTTP transparente: los payloads GeoJSON del mando 3D bajan
-# de ~3.5 MB a ~0.2-0.4 MB por interacción (el navegador negocia gzip solo).
+# CompresiÃ³n HTTP transparente: los payloads GeoJSON del mando 3D bajan
+# de ~3.5 MB a ~0.2-0.4 MB por interacciÃ³n (el navegador negocia gzip solo).
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 @app.middleware("http")
 async def _no_cache_dynamic(request, call_next):
     """
-    Sin caché para respuestas dinámicas: sin esto el navegador reutiliza el
-    HTML del mando 3D y los payloads de simulación viejos (con esquemas
+    Sin cachÃ© para respuestas dinÃ¡micas: sin esto el navegador reutiliza el
+    HTML del mando 3D y los payloads de simulaciÃ³n viejos (con esquemas
     anteriores) y "desaparecen" las funciones nuevas al desplegar cambios.
     """
     resp = await call_next(request)
@@ -82,18 +82,18 @@ async def _no_cache_dynamic(request, call_next):
 _STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 
 
-@app.get("/mando3d", tags=["3D — Centro de Mando"], include_in_schema=False)
+@app.get("/mando3d", tags=["3D â€” Centro de Mando"], include_in_schema=False)
 def mando3d() -> FileResponse:
     """Sirve la interfaz 3D inmersiva (CesiumJS + glassmorphism)."""
     return FileResponse(_STATIC_DIR / "mando3d.html", media_type="text/html")
 
 
-@app.get("/api/geo/config", tags=["3D — Centro de Mando"])
+@app.get("/api/geo/config", tags=["3D â€” Centro de Mando"])
 def api_geo_config() -> dict:
     """
-    Configuración del visor 3D: token de Cesium Ion (si está configurado en
+    ConfiguraciÃ³n del visor 3D: token de Cesium Ion (si estÃ¡ configurado en
     .env) para activar Cesium World Terrain + OSM Buildings, y banderas de
-    qué capas puede usar el frontend.
+    quÃ© capas puede usar el frontend.
     """
     return {
         "cesium_ion_token": CONFIG.cesium.ion_token or None,
@@ -113,11 +113,11 @@ class TriggerRequest(BaseModel):
     zone: str | None = Field(default=None, description="Id de zona (/zones) o bbox")
 
 
-@app.post("/api/alert/trigger", tags=["3D — Centro de Mando"])
+@app.post("/api/alert/trigger", tags=["3D â€” Centro de Mando"])
 def api_alert_trigger(req: TriggerRequest) -> dict:
     """
-    Simula con los parámetros actuales de la escena 3D, evalúa el nivel y
-    envía las notificaciones (Twilio + Webhook COER). Si se incluye la
+    Simula con los parÃ¡metros actuales de la escena 3D, evalÃºa el nivel y
+    envÃ­a las notificaciones (Twilio + Webhook COER). Si se incluye la
     captura PNG del globo, se guarda junto al informe.
     """
     from hidroalert.data_ingest.aoi import parse_bbox_text
@@ -132,7 +132,7 @@ def api_alert_trigger(req: TriggerRequest) -> dict:
         )
         decision = evaluate_alert(result)
 
-        # Captura 3D adjunta (si llegó del frontend)
+        # Captura 3D adjunta (si llegÃ³ del frontend)
         shot_path = None
         if req.screenshot_png:
             import base64
@@ -153,13 +153,13 @@ def api_alert_trigger(req: TriggerRequest) -> dict:
             "webhook_ok": out.get("webhook_ok", False),
             "screenshot": str(shot_path) if shot_path else None,
         }
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, ImportError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.post("/api/report/pdf", tags=["3D — Centro de Mando"])
+@app.post("/api/report/pdf", tags=["3D â€” Centro de Mando"])
 def api_report_pdf(req: TriggerRequest) -> dict:
-    """Boletín PDF con captura 3D del foco (si se envió)."""
+    """BoletÃ­n PDF con captura 3D del foco (si se enviÃ³)."""
     try:
         snapshot, _ = get_snapshot(req.zone)
         result = simulate_flood(
@@ -171,7 +171,7 @@ def api_report_pdf(req: TriggerRequest) -> dict:
         decision = evaluate_alert(result)
         paths = generate_alert_report(result, decision)
         if req.screenshot_png and paths.get("pdf"):
-            # Incrusta la captura 3D como página final del PDF
+            # Incrusta la captura 3D como pÃ¡gina final del PDF
             import base64
 
             from hidroalert.config import REPORTS_DIR
@@ -186,12 +186,12 @@ def api_report_pdf(req: TriggerRequest) -> dict:
             "pdf": str(paths["pdf"]) if paths.get("pdf") else None,
             "json": str(paths["json"]) if paths.get("json") else None,
         }
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, ImportError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
-# Cache de snapshots por AOI: evita re-descargar GEE en cada simulación.
+# Cache de snapshots por AOI: evita re-descargar GEE en cada simulaciÃ³n.
 # ---------------------------------------------------------------------------
 _SNAPSHOT_CACHE: dict[str, AreaSnapshot] = {}
 
@@ -201,7 +201,7 @@ class SimulateRequest(BaseModel):
 
     aoi_name: str = Field(
         default="",
-        description="Etiqueta personalizada del AOI (opcional). Vacío usa el "
+        description="Etiqueta personalizada del AOI (opcional). VacÃ­o usa el "
                     "nombre de la zona del registro o 'AOI personalizado'.",
     )
     zone: str | None = Field(
@@ -218,15 +218,15 @@ class SimulateRequest(BaseModel):
     include_overland: bool | None = Field(
         default=None,
         description=(
-            "Simular también la concentración de agua sobre terreno "
-            "(escorrentía superficial ruteada con D8: pozas en depresiones). "
+            "Simular tambiÃ©n la concentraciÃ³n de agua sobre terreno "
+            "(escorrentÃ­a superficial ruteada con D8: pozas en depresiones). "
             "None = default del endpoint: False en /simulate y "
             "/simulate-and-alert; True en /forecast-timeline."
         ),
     )
     use_demo_data: bool = Field(
         default=False,
-        description="Usa un área sintética (sin GEE) para pruebas offline.",
+        description="Usa un Ã¡rea sintÃ©tica (sin GEE) para pruebas offline.",
     )
     lookback_days: int = Field(default=12, ge=1, le=60)
 
@@ -256,7 +256,7 @@ def _resolve_aoi(req: SimulateRequest) -> AreaOfInterest:
 
 
 def _get_snapshot(req: SimulateRequest) -> AreaSnapshot:
-    """Obtiene (y cachea) el snapshot del área: real (GEE) o demo."""
+    """Obtiene (y cachea) el snapshot del Ã¡rea: real (GEE) o demo."""
     aoi = _resolve_aoi(req)
     cache_key = "demo" if req.use_demo_data else f"{aoi.bbox}@{aoi.scale_m}"
     if cache_key in _SNAPSHOT_CACHE:
@@ -288,21 +288,21 @@ def health() -> dict:
 @app.get("/zones", tags=["sistema"])
 def zones() -> dict:
     """
-    Catálogo de zonas de análisis: los 8 distritos de la provincia de
-    Camaná (Arequipa), más coordenadas personalizadas vía bbox. Para ambas UIs.
+    CatÃ¡logo de zonas de anÃ¡lisis: los 8 distritos de la provincia de
+    CamanÃ¡ (Arequipa), mÃ¡s coordenadas personalizadas vÃ­a bbox. Para ambas UIs.
     """
     return {"zones": list_zones(), "default": "camana-camana"}
 
 
-@app.get("/scenarios", tags=["simulación"])
+@app.get("/scenarios", tags=["simulaciÃ³n"])
 def scenarios() -> dict:
     """Presets de escenarios para el dashboard."""
     return {"presets": scenario_presets()}
 
 
-@app.post("/simulate", tags=["simulación"])
+@app.post("/simulate", tags=["simulaciÃ³n"])
 def simulate(req: SimulateRequest) -> dict:
-    """Ejecuta la simulación hidrológica y devuelve las métricas JSON."""
+    """Ejecuta la simulaciÃ³n hidrolÃ³gica y devuelve las mÃ©tricas JSON."""
     try:
         snapshot = _get_snapshot(req)
         result = simulate_flood(
@@ -314,18 +314,18 @@ def simulate(req: SimulateRequest) -> dict:
             include_overland=bool(req.include_overland),
         )
         return result.to_dict()
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, ImportError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.get("/api/geo/simulate", tags=["3D — Centro de Mando"])
+@app.get("/api/geo/simulate", tags=["3D â€” Centro de Mando"])
 def api_geo_simulate(
     zone: str | None = Query(default=None, description="Id de zona (/zones) o bbox personalizado"),
     precipitation_mm_h: float = Query(default=35.0, ge=0, le=200),
     flow_increase_pct: float = Query(default=80.0, ge=0, le=300),
     overland: bool = Query(
         default=False,
-        description="Incluir concentración de agua sobre terreno (escorrentía D8)",
+        description="Incluir concentraciÃ³n de agua sobre terreno (escorrentÃ­a D8)",
     ),
     sar: bool = Query(
         default=False,
@@ -333,10 +333,10 @@ def api_geo_simulate(
     ),
 ) -> dict:
     """
-    Payload 3D para CesiumJS: agua volumétrica, viviendas en puntos, vías,
-    radar SAR, focos críticos y KPIs — una llamada por cambio de slider o zona.
-    Con `overland=true` la lámina incluye las pozas de escorrentía sobre el
-    terreno, no solo el desborde del cauce; con `sar=true` viaja también el
+    Payload 3D para CesiumJS: agua volumÃ©trica, viviendas en puntos, vÃ­as,
+    radar SAR, focos crÃ­ticos y KPIs â€” una llamada por cambio de slider o zona.
+    Con `overland=true` la lÃ¡mina incluye las pozas de escorrentÃ­a sobre el
+    terreno, no solo el desborde del cauce; con `sar=true` viaja tambiÃ©n el
     agua observada por Sentinel-1 (capa bajo demanda: solo se pide cuando el
     usuario activa "Radar SAR").
     """
@@ -345,16 +345,16 @@ def api_geo_simulate(
             zone, precipitation_mm_h, flow_increase_pct,
             include_overland=overland, include_sar=sar,
         )
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, ImportError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.get("/forecast", tags=["pronóstico"])
+@app.get("/forecast", tags=["pronÃ³stico"])
 def get_forecast(
     bbox: str | None = Query(default=None, description="min_lon,min_lat,max_lon,max_lat"),
     hours: int = Query(default=48, ge=1, le=96),
 ) -> dict:
-    """Pronóstico horario de precipitación (WeatherNext 3 si hay key; si no, Open-Meteo)."""
+    """PronÃ³stico horario de precipitaciÃ³n (WeatherNext 3 si hay key; si no, Open-Meteo)."""
     try:
         aoi = parse_bbox_text(bbox) if bbox else DEFAULT_AOI
         fc = forecast_precipitation(aoi, hours=hours)
@@ -363,24 +363,24 @@ def get_forecast(
             "peak": {"mm_h": fc["peak_mm_h"], "time": fc["peak_time"]},
             "series": [{"time": t, "mm_h": v} for t, v in fc["series"]],
         }
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, ImportError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.post("/forecast-timeline", tags=["pronóstico"])
+@app.post("/forecast-timeline", tags=["pronÃ³stico"])
 def forecast_timeline(req: SimulateRequest, max_hours: int = Query(default=48, ge=1, le=96)) -> dict:
     """
-    Línea de tiempo de alertas: propaga el pronóstico horario por el motor
-    hidrológico — con la CONCENTRACIÓN DE AGUA SOBRE TERRENO incorporada
-    por defecto (cada hora reporta `overland_volume_m3`) — y devuelve
-    CUÁNDO se cruza AMARILLO/ROJO.
+    LÃ­nea de tiempo de alertas: propaga el pronÃ³stico horario por el motor
+    hidrolÃ³gico â€” con la CONCENTRACIÃ“N DE AGUA SOBRE TERRENO incorporada
+    por defecto (cada hora reporta `overland_volume_m3`) â€” y devuelve
+    CUÃNDO se cruza AMARILLO/ROJO.
     """
     try:
         snapshot = _get_snapshot(req)
         aoi = _resolve_aoi(req)
         fc = forecast_precipitation(aoi, hours=max_hours)
-        # Por defecto la predicción de lluvias incluye la escorrentía sobre
-        # terreno (None → True); el request puede desactivarla explícitamente.
+        # Por defecto la predicciÃ³n de lluvias incluye la escorrentÃ­a sobre
+        # terreno (None â†’ True); el request puede desactivarla explÃ­citamente.
         include_overland = True if req.include_overland is None else req.include_overland
         tl = build_alert_timeline(
             snapshot, fc, max_hours=max_hours,
@@ -394,7 +394,7 @@ def forecast_timeline(req: SimulateRequest, max_hours: int = Query(default=48, g
             "rise_to": tl["rise_to"],
             "timeline": tl["timeline"],
         }
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, ImportError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
@@ -405,7 +405,7 @@ def simulate_and_alert(
     generate_report: bool = Query(default=True, description="Generar PDF/JSON"),
 ) -> dict:
     """
-    Pipeline completo: simulación → alerta condicional → notificaciones → informe.
+    Pipeline completo: simulaciÃ³n â†’ alerta condicional â†’ notificaciones â†’ informe.
     """
     try:
         snapshot = _get_snapshot(req)
@@ -432,5 +432,5 @@ def simulate_and_alert(
             },
             "informe": {k: str(v) if v else None for k, v in report_paths.items()},
         }
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, ImportError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

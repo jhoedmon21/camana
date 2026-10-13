@@ -16,8 +16,10 @@ from dotenv import load_dotenv
 
 # Raíz del paquete: hidroalert/
 BASE_DIR = Path(__file__).resolve().parent
-# Directorio donde se guardan los informes generados
-REPORTS_DIR = BASE_DIR / "reports"
+# Directorio donde se guardan los informes generados. Sobrescribible con
+# HIDROALERT_REPORTS_DIR (en serverless —p. ej. Vercel— el FS es de solo
+# lectura salvo /tmp).
+REPORTS_DIR = Path(os.environ.get("HIDROALERT_REPORTS_DIR") or (BASE_DIR / "reports"))
 
 # Carga `.env` si existe (no sobreescribe variables ya definidas)
 load_dotenv(BASE_DIR / ".env")
