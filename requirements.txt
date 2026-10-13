@@ -19,6 +19,11 @@ shapely>=2.0               # geometrías vectoriales: edificios, vías, cultivos
 fastapi>=0.110
 uvicorn>=0.29               # correr local: uvicorn hidroalert.api.main:app
 
+# --- Google Earth Engine: datos satelitales reales (Sentinel-1, MERIT,
+#     Open Buildings). Requerido en producción: sin ee el sistema degrada a
+#     modo demo. El token OAuth viaja en HIDROALERT_GEE_CREDENTIALS_JSON.
+earthengine-api>=0.1.400
+
 # --- Servicios externos del runtime ---
 requests>=2.31             # webhooks, Google Maps Static API, pronóstico Open-Meteo
 python-dotenv>=1.0         # credenciales en .env

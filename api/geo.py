@@ -20,7 +20,9 @@ from __future__ import annotations
 import base64
 import logging
 import math
+import os
 import zlib
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -58,11 +60,57 @@ PROPAGATION_HOURS = 6
 # Cache de snapshots por bbox (evita re-descargar GEE en cada slider)
 _SNAP_CACHE: dict[str, AreaSnapshot] = {}
 
+# Cache PERSISTENTE en serverless (/tmp): las instancias que se reutilizan
+# no vuelven a descargar GEE tras un arranque frío. Inactiva en local
+# (el directorio no es escribible o no existe la variable).
+_SNAP_DISK_DIR = os.environ.get("HIDROALERT_SNAPSHOT_CACHE_DIR", "")
+
+
+def _snapshot_disk_path(key: str, demo: bool) -> Path:
+    """Ruta del snapshot serializado; None si el caché en disco está inactivo."""
+    if not _SNAP_DISK_DIR:
+        return None
+    try:
+        d = Path(_SNAP_DISK_DIR)
+        d.mkdir(parents=True, exist_ok=True)
+        return d / f"{'demo' if demo else 'real'}__{key.replace('/', '_')}.pkl"
+    except OSError:
+        return None
+
+
+def _snapshot_load_disk(key: str, demo: bool):
+    """Carga el snapshot desde /tmp si existe; None si no."""
+    import pickle
+
+    path = _snapshot_disk_path(key, demo)
+    if path is None or not path.exists():
+        return None
+    try:
+        with open(path, "rb") as fh:
+            return pickle.load(fh)
+    except Exception:  # pkl corrupto/versión distinta: se ignora
+        return None
+
+
+def _snapshot_save_disk(key: str, demo: bool, snap: AreaSnapshot) -> None:
+    import pickle
+
+    path = _snapshot_disk_path(key, demo)
+    if path is None:
+        return
+    try:
+        with open(path, "wb") as fh:
+            pickle.dump(snap, fh, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception:  # /tmp lleno u otro fallo: el caché es best-effort
+        pass
+
 
 def get_snapshot(zone_or_bbox: str | None) -> tuple[AreaSnapshot, bool]:
     """
     Snapshot cacheado para una zona (id del registro) o bbox personalizado.
     Usa GEE real si es posible; degrada a demo sin credenciales.
+
+    Orden de resolución: memoria → /tmp (serverless) → GEE → demo.
 
     Returns:
         (snapshot, es_demo)
@@ -73,9 +121,17 @@ def get_snapshot(zone_or_bbox: str | None) -> tuple[AreaSnapshot, bool]:
     if key in _SNAP_CACHE:
         return _SNAP_CACHE[key], _SNAP_CACHE[key].aoi_name.startswith("Valle Demo")
 
+    # 1) Caché persistente en /tmp (instancia reutilizada tras arranque frío)
+    for demo_flag in (False, True):
+        cached = _snapshot_load_disk(key, demo_flag)
+        if cached is not None:
+            _SNAP_CACHE[key] = cached
+            return cached, cached.aoi_name.startswith("Valle Demo")
+
     if not is_available():
         snap = build_demo_snapshot()
         _SNAP_CACHE[key] = snap
+        _snapshot_save_disk(key, True, snap)
         return snap, True
     try:
         aoi = resolve_aoi(key)
@@ -84,8 +140,10 @@ def get_snapshot(zone_or_bbox: str | None) -> tuple[AreaSnapshot, bool]:
         logger.warning("GEE falló (%s); usando área demo", exc)
         snap = build_demo_snapshot()
         _SNAP_CACHE[key] = snap
+        _snapshot_save_disk(key, True, snap)
         return snap, True
     _SNAP_CACHE[key] = snap
+    _snapshot_save_disk(key, False, snap)
     return snap, False
 
 

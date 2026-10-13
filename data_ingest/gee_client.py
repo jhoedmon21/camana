@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 
 from hidroalert.config import CONFIG
 
@@ -18,6 +19,43 @@ logger = logging.getLogger(__name__)
 # Estado del singleton
 _ee = None
 _initialized = False
+
+
+def _materialize_oauth_token_file() -> bool:
+    """
+    Serverless (Vercel/Railway): materializa el token OAuth interactivo
+    desde la variable de entorno HIDROALERT_GEE_CREDENTIALS_JSON (el
+    contenido de ~/.config/earthengine/credentials) en la ruta que la
+    librería `ee` espera. `os.path.expanduser` respeta $HOME, así que si
+    el HOME del proceso no es escribible se redirige a /tmp.
+
+    Returns:
+        True si el token se escribió; False si la variable no está definida.
+    """
+    import json as _json
+
+    raw = (os.environ.get("HIDROALERT_GEE_CREDENTIALS_JSON") or "").strip()
+    if not raw:
+        return False
+    try:
+        _json.loads(raw)  # valida que sea JSON bien formado
+    except ValueError as exc:
+        raise RuntimeError(
+            "HIDROALERT_GEE_CREDENTIALS_JSON no es JSON válido: "
+            "debe contener el archivo ~/.config/earthengine/credentials."
+        ) from exc
+    for home in (os.environ.get("HOME") or "/tmp", "/tmp"):
+        cred_dir = os.path.join(home, ".config", "earthengine")
+        try:
+            os.makedirs(cred_dir, exist_ok=True)
+            with open(os.path.join(cred_dir, "credentials"), "w", encoding="utf-8") as fh:
+                fh.write(raw)
+            os.environ["HOME"] = home  # expanduser('~') usará este HOME
+            logger.info("Token OAuth GEE materializado en %s", cred_dir)
+            return True
+        except OSError:
+            continue
+    raise RuntimeError("No se pudo escribir el token OAuth de GEE (HOME y /tmp ilegibles).")
 
 
 def get_ee():
@@ -64,7 +102,9 @@ def get_ee():
             ee.Initialize(options={"credentials": creds, "project": CONFIG.gee.project_id})
             logger.info("GEE inicializado con cuenta de servicio %s", key_data.get("client_email"))
         else:
-            # Autenticación interactiva (`earthengine authenticate`)
+            # Autenticación interactiva (`earthengine authenticate`), incluido
+            # el despliegue serverless donde el token viaja por env var.
+            _materialize_oauth_token_file()
             ee.Initialize(project=CONFIG.gee.project_id)
             logger.info("GEE inicializado con credenciales de usuario (proyecto %s)", CONFIG.gee.project_id)
         _ee = ee

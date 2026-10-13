@@ -17,8 +17,9 @@ import importlib.util
 import os
 import sys
 
-# Informes a /tmp: en serverless el FS del proyecto es de solo lectura
+# Informes y caché de snapshots a /tmp: en serverless el FS es de solo lectura
 os.environ.setdefault("HIDROALERT_REPORTS_DIR", "/tmp/hidroalert-reports")
+os.environ.setdefault("HIDROALERT_SNAPSHOT_CACHE_DIR", "/tmp/hidroalert-snapcache")
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PARENT = os.path.dirname(_ROOT)
