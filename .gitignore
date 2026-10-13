@@ -17,3 +17,8 @@ data/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Vercel CLI (link local del proyecto)
+.vercel/
+
+.vercel
