@@ -367,51 +367,63 @@ def _drainage_geojson(
     # upstream crece hacia la desembocadura, así que se camina desde la celda
     # de menor 'upa' (naciente) al vecino de mayor 'upa' (downstream): la
     # polilínea resultante es continua y físicamente direccional.
-    visited = np.zeros_like(river, dtype=bool)
+    #
+    # RENDIMIENTO: `processed` marca la componente entera tras analizarla UNA
+    # vez; los tramos adicionales salen de sus celdas ordenadas por 'upa' sin
+    # re-recorrer la componente (antes era O(celdas²): ~58 s en modo demo).
+    visited = np.zeros_like(river, dtype=bool)      # celdas ya caminadas
+    processed = np.zeros_like(river, dtype=bool)     # componentes ya analizadas
     feats: list[dict[str, Any]] = []
     order = 0
     for r0, c0 in zip(*np.nonzero(river)):
-        if visited[r0, c0]:
+        if processed[r0, c0]:
             continue
-        order += 1
-        # Origen del tramo: celda de menor upa aún no visitada en su componente
-        comp_r, comp_c = _component_cells(river, visited, int(r0), int(c0))
-        start_idx = int(np.argmin([upa[rr, cc] for rr, cc in zip(comp_r, comp_c)]))
-        r, c = comp_r[start_idx], comp_c[start_idx]
-        visited[r, c] = True
-
-        pts: list[tuple[float, float, float]] = []
-        while len(pts) < MAX_DRAINAGE_POINTS:
-            lon = min_lon + (c + 0.5) * dlon
-            lat = max_lat - (r + 0.5) * dlat
-            elev = float(base_h(lon, lat)) if base_h else 0.0
-            pts.append((round(lon, 6), round(lat, 6), round(elev + 6.0, 1)))
-            # Avanza al vecino de cauce NO visitado con MAYOR upa (río abajo)
-            best = None
-            for dr, dc in ((0, 1), (0, -1), (1, 0), (-1, 0),
-                           (1, 1), (1, -1), (-1, 1), (-1, -1)):  # 8-conexo
-                rr, cc = r + dr, c + dc
-                if (
-                    0 <= rr < nrows and 0 <= cc < ncols
-                    and river[rr, cc] and not visited[rr, cc]
-                ):
-                    if best is None or upa[rr, cc] > upa[best[1], best[2]]:
-                        best = (float(upa[rr, cc]), rr, cc)
-            if best is None:
-                break
-            _, r, c = best
+        comp_r, comp_c = _component_cells(river, processed, int(r0), int(c0))
+        processed[comp_r, comp_c] = True  # esta componente no vuelve a analizarse
+        # Celdas de la componente ordenadas por 'upa' ascendente: cada tramo
+        # parte de la naciente (menor upa) aún no caminada.
+        comp_upa = upa[comp_r, comp_c]
+        for k in np.argsort(comp_upa):
+            r, c = int(comp_r[k]), int(comp_c[k])
+            if visited[r, c]:
+                continue
+            order += 1
             visited[r, c] = True
-        if len(pts) >= 3:
-            feats.append({
-                "type": "Feature",
-                "properties": {
-                    "order": order,
-                    "upa_max_km2": round(float(np.nanmax(upa[river])), 1),
-                    "flow": "downstream",
-                },
-                "geometry": {"type": "LineString", "coordinates": pts},
-            })
-        if len(feats) >= 12:  # límite de tramos renderizables
+
+            pts: list[tuple[float, float, float]] = []
+            while len(pts) < MAX_DRAINAGE_POINTS:
+                lon = min_lon + (c + 0.5) * dlon
+                lat = max_lat - (r + 0.5) * dlat
+                elev = float(base_h(lon, lat)) if base_h else 0.0
+                pts.append((round(lon, 6), round(lat, 6), round(elev + 6.0, 1)))
+                # Avanza al vecino de cauce NO visitado con MAYOR upa (río abajo)
+                best = None
+                for dr, dc in ((0, 1), (0, -1), (1, 0), (-1, 0),
+                               (1, 1), (1, -1), (-1, 1), (-1, -1)):  # 8-conexo
+                    rr, cc = r + dr, c + dc
+                    if (
+                        0 <= rr < nrows and 0 <= cc < ncols
+                        and river[rr, cc] and not visited[rr, cc]
+                    ):
+                        if best is None or upa[rr, cc] > upa[best[1], best[2]]:
+                            best = (float(upa[rr, cc]), rr, cc)
+                if best is None:
+                    break
+                _, r, c = best
+                visited[r, c] = True
+            if len(pts) >= 3:
+                feats.append({
+                    "type": "Feature",
+                    "properties": {
+                        "order": order,
+                        "upa_max_km2": round(float(np.nanmax(upa[river])), 1),
+                        "flow": "downstream",
+                    },
+                    "geometry": {"type": "LineString", "coordinates": pts},
+                })
+            if len(feats) >= 12:  # límite de tramos renderizables
+                break
+        if len(feats) >= 12:
             break
     return {"type": "FeatureCollection", "features": feats}
 
